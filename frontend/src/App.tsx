@@ -6,13 +6,14 @@ import Players from './pages/Players';
 import Teams from './pages/Teams';
 import Auction from './pages/Auction';
 import Reports from './pages/Reports';
+import LiveViewer from './pages/LiveViewer';
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-gray-500">Loading...</div>
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
+        <div className="text-gray-500 dark:text-gray-400">Loading...</div>
       </div>
     );
   }
@@ -24,46 +25,13 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<Login />} />
-        <Route
-          path="/"
-          element={
-            <PrivateRoute>
-              <Dashboard />
-            </PrivateRoute>
-          }
-        />
-        <Route
-          path="/players"
-          element={
-            <PrivateRoute>
-              <Players />
-            </PrivateRoute>
-          }
-        />
-        <Route
-          path="/teams"
-          element={
-            <PrivateRoute>
-              <Teams />
-            </PrivateRoute>
-          }
-        />
-        <Route
-          path="/auction"
-          element={
-            <PrivateRoute>
-              <Auction />
-            </PrivateRoute>
-          }
-        />
-        <Route
-          path="/reports"
-          element={
-            <PrivateRoute>
-              <Reports />
-            </PrivateRoute>
-          }
-        />
+        {/* Public viewer – no login required */}
+        <Route path="/live" element={<LiveViewer />} />
+        <Route path="/" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
+        <Route path="/players" element={<PrivateRoute><Players /></PrivateRoute>} />
+        <Route path="/teams" element={<PrivateRoute><Teams /></PrivateRoute>} />
+        <Route path="/auction" element={<PrivateRoute><Auction /></PrivateRoute>} />
+        <Route path="/reports" element={<PrivateRoute><Reports /></PrivateRoute>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>

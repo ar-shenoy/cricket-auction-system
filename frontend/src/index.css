@@ -3,7 +3,12 @@
 @tailwind utilities;
 
 body {
-  @apply bg-gray-50 text-gray-900 antialiased;
+  @apply bg-gray-50 text-gray-900 antialiased transition-colors duration-200;
+}
+
+.dark body,
+html.dark body {
+  @apply bg-gray-900 text-gray-100;
 }
 
 /* Simple scrollbar */
@@ -14,7 +19,13 @@ body {
 ::-webkit-scrollbar-track {
   background: #f1f1f1;
 }
+.dark ::-webkit-scrollbar-track {
+  background: #1f2937;
+}
 ::-webkit-scrollbar-thumb {
   background: #c1c1c1;
   border-radius: 3px;
+}
+.dark ::-webkit-scrollbar-thumb {
+  background: #4b5563;
 }
