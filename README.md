@@ -1,4 +1,4 @@
-# 🏏 Cricket Auction System
+# Cricket Auction System
 
 A **lightweight, easy-to-use, real-time** cricket player auction system.  
 Perfect for local tournaments, college leagues, corporate events, and franchise auctions.
@@ -7,19 +7,19 @@ Perfect for local tournaments, college leagues, corporate events, and franchise 
 
 ## Features (Complete)
 
-- ✅ Authentication (Admin + Team Managers)
-- ✅ Team management with purse tracking
-- ✅ Player management (add, search, filter)
-- ✅ **Hybrid CSV Import** from Google Form
-- ✅ Approve / Reject / Bulk Approve players
-- ✅ **Live Auction Room** with real-time bidding (Socket.IO)
-- ✅ Countdown timer + bid increment
-- ✅ Automatic purse deduction on sell
-- ✅ Sold / Unsold handling
-- ✅ Live sold list + remaining purse
-- ✅ **Reports** (Summary, Sold list, Team Squads, Unsold)
-- ✅ Export to CSV
-- ✅ Mobile-friendly clean UI
+-  Authentication (Admin + Team Managers)
+-  Team management with purse tracking
+-  Player management (add, search, filter)
+-  **Hybrid CSV Import** from Google Form
+-  Approve / Reject / Bulk Approve players
+-  **Live Auction Room** with real-time bidding (Socket.IO)
+-  Countdown timer + bid increment
+-  Automatic purse deduction on sell
+-  Sold / Unsold handling
+-  Live sold list + remaining purse
+-  **Reports** (Summary, Sold list, Team Squads, Unsold)
+-  Export to CSV
+-  Mobile-friendly clean UI
 
 ---
 
@@ -198,4 +198,4 @@ The importer automatically maps common column names.
 
 **Built as a complete, lightweight, ready-to-use system.**
 
-Enjoy your auction! 🏏
+Enjoy your auction!
