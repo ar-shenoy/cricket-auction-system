@@ -6,8 +6,8 @@ const { v4: uuidv4 } = require('uuid');
 
 const router = express.Router();
 
-// Get all teams
-router.get('/', authMiddleware, (req, res) => {
+// Get all teams (public for live viewer)
+router.get('/', (req, res) => {
   const teams = getTeams();
   res.json(teams);
 });
@@ -78,7 +78,7 @@ router.put('/:id', authMiddleware, requireRole('admin'), (req, res) => {
   res.json(updated);
 });
 
-// Delete team (Admin only) - soft for now
+// Delete team (Admin only)
 router.delete('/:id', authMiddleware, requireRole('admin'), (req, res) => {
   const teams = getTeams();
   const idx = teams.findIndex(t => t.id === req.params.id);
