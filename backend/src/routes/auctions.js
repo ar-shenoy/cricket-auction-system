@@ -11,6 +11,7 @@ const {
 const { authMiddleware, requireRole } = require('../middleware/auth');
 
 const router = express.Router();
+const MIN_SLOT = 1000;
 
 const DEFAULT_BID_RULES = [
   { upTo: 10000, increment: 1000 },
@@ -37,6 +38,12 @@ function normalizeBidRules(raw) {
     upTo: r.upTo === null || r.upTo === undefined || r.upTo === '' ? null : Number(r.upTo),
     increment: Number(r.increment) || 1000
   }));
+}
+
+function maxBidForTeam(team, soldCount) {
+  if (team.maxPlayers == null || team.maxPlayers <= 0) return team.remainingPurse;
+  const slotsAfter = Math.max(0, Number(team.maxPlayers) - soldCount - 1);
+  return Math.max(0, team.remainingPurse - slotsAfter * MIN_SLOT);
 }
 
 router.get('/', authMiddleware, (req, res) => {
@@ -128,16 +135,12 @@ router.post('/:id/pause', authMiddleware, requireRole('admin'), (req, res) => {
   const auction = getAuctions().find(a => a.id === req.params.id);
   if (!auction) return res.status(404).json({ error: 'Auction not found' });
   const newStatus = auction.status === 'live' ? 'paused' : 'live';
-  const updated = updateAuction(auction.id, {
-    status: newStatus,
-    timerEndsAt: null
-  });
+  const updated = updateAuction(auction.id, { status: newStatus, timerEndsAt: null });
   const io = req.app.get('io');
   if (io) io.to(`auction-${auction.id}`).emit('auction-status', updated);
   res.json(updated);
 });
 
-/** Pick a random Approved player and put them on the block */
 router.post('/:id/next-random', authMiddleware, requireRole('admin'), (req, res) => {
   const auction = getAuctions().find(a => a.id === req.params.id);
   if (!auction) return res.status(404).json({ error: 'Auction not found' });
@@ -226,6 +229,13 @@ router.post('/:id/bid', authMiddleware, (req, res) => {
   if (team.maxPlayers != null && soldForTeam.length >= Number(team.maxPlayers)) {
     return res.status(400).json({ error: `Team has reached max players (${team.maxPlayers})` });
   }
+  const maxAllowed = maxBidForTeam(team, soldForTeam.length);
+  if (bidAmount > maxAllowed) {
+    return res.status(400).json({
+      error: `Max bid for this team is ₹${maxAllowed.toLocaleString()} (must leave ₹${MIN_SLOT.toLocaleString()} for each remaining squad slot)`,
+      maxBid: maxAllowed
+    });
+  }
   if (team.roleCaps && typeof team.roleCaps === 'object') {
     const player = getPlayers().find(p => p.id === auction.currentPlayerId);
     if (player && team.roleCaps[player.role] != null) {
@@ -259,7 +269,7 @@ router.post('/:id/bid', authMiddleware, (req, res) => {
       team: { id: team.id, name: team.name }
     });
   }
-  res.json({ auction: updatedAuction, bid, increment: getIncrement(bidAmount, updatedAuction) });
+  res.json({ auction: updatedAuction, bid, increment: getIncrement(bidAmount, updatedAuction), maxBid: maxAllowed });
 });
 
 router.post('/:id/sell', authMiddleware, requireRole('admin'), (req, res) => {
@@ -367,7 +377,6 @@ router.post('/:id/end', authMiddleware, requireRole('admin'), (req, res) => {
   res.json(updated);
 });
 
-/** Restart same auction: refund purses, clear sold for this auction, set Sold/Unsold players back to Approved */
 router.post('/:id/restart', authMiddleware, requireRole('admin'), (req, res) => {
   const auction = getAuctions().find(a => a.id === req.params.id);
   if (!auction) return res.status(404).json({ error: 'Auction not found' });
@@ -375,7 +384,6 @@ router.post('/:id/restart', authMiddleware, requireRole('admin'), (req, res) => 
   const data = getData();
   const soldForAuction = data.soldPlayers.filter(s => s.auctionId === auction.id);
 
-  // Refund purses
   soldForAuction.forEach(s => {
     const team = getTeams().find(t => t.id === s.teamId);
     if (team) {
@@ -384,7 +392,6 @@ router.post('/:id/restart', authMiddleware, requireRole('admin'), (req, res) => 
     updatePlayer(s.playerId, { status: 'Approved' });
   });
 
-  // Also re-approve Unsold players so they can be auctioned again
   getPlayers().forEach(p => {
     if (p.status === 'Unsold') updatePlayer(p.id, { status: 'Approved' });
   });
@@ -408,11 +415,9 @@ router.post('/:id/restart', authMiddleware, requireRole('admin'), (req, res) => 
   res.json({ auction: updated, message: 'Auction restarted. Players back to Approved, purses refunded.' });
 });
 
-/** Fresh start: end any active auction context, reset all team purses, clear all sold/bids, re-approve all players, create new draft auction */
 router.post('/fresh', authMiddleware, requireRole('admin'), (req, res) => {
   const data = getData();
 
-  // Mark any live/paused/draft as completed
   getAuctions().forEach(a => {
     if (a.status !== 'completed') {
       updateAuction(a.id, {
@@ -426,16 +431,13 @@ router.post('/fresh', authMiddleware, requireRole('admin'), (req, res) => {
     }
   });
 
-  // Reset team purses to full purse
   getTeams().forEach(t => {
     updateTeam(t.id, { remainingPurse: t.purse });
   });
 
-  // Clear sold + bids entirely
   data.soldPlayers = [];
   data.bids = [];
 
-  // All Sold/Unsold → Approved (keep Rejected/Pending as-is)
   getPlayers().forEach(p => {
     if (p.status === 'Sold' || p.status === 'Unsold') {
       updatePlayer(p.id, { status: 'Approved' });
@@ -462,7 +464,7 @@ router.post('/fresh', authMiddleware, requireRole('admin'), (req, res) => {
 
   res.status(201).json({
     auction,
-    message: 'Fresh auction created. Team purses reset. Sold players set to Approved. Configure teams/players if needed, then Start.'
+    message: 'Fresh auction created. Team purses reset. Sold players set to Approved.'
   });
 });
 
