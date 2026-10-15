@@ -21,9 +21,8 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      // Don't force login redirect on public pages
       const path = typeof window !== 'undefined' ? window.location.pathname : '';
-      if (path !== '/live' && !path.startsWith('/live')) {
+      if (path !== '/live' && !path.startsWith('/live') && path !== '/results' && !path.startsWith('/results')) {
         localStorage.removeItem('token');
         window.location.href = '/login';
       }
@@ -53,4 +52,13 @@ export function getSocketUrl(): string {
     return 'http://localhost:5000';
   }
   return window.location.origin;
+}
+
+/** Ping backend health (wakes Render free tier). */
+export async function wakeBackend() {
+  try {
+    await fetch(`${getSocketUrl()}/api/health`, { method: 'GET', mode: 'cors' });
+  } catch {
+    /* ignore */
+  }
 }
