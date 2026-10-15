@@ -4,7 +4,7 @@ const csv = require('csv-parser');
 const fs = require('fs');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
-const { getPlayers, addPlayer, updatePlayer, getData, persist } = require('../data/store');
+const { getPlayers, addPlayer, updatePlayer, getData, persist, getSoldPlayers, updateTeam, getTeams } = require('../data/store');
 const { authMiddleware, requireRole } = require('../middleware/auth');
 
 const router = express.Router();
@@ -50,7 +50,6 @@ router.get('/', authMiddleware, (req, res) => {
   res.json(players);
 });
 
-// Public single player (for live viewer) — before /:id
 router.get('/public/:id', (req, res) => {
   const players = getPlayers();
   const player = players.find(p => p.id === req.params.id);
@@ -63,6 +62,9 @@ router.get('/public/:id', (req, res) => {
     city: player.city,
     bio: player.bio,
     photoUrl: player.photoUrl,
+    battingStyle: player.battingStyle,
+    bowlingStyle: player.bowlingStyle,
+    age: player.age,
     status: player.status
   });
 });
@@ -126,13 +128,33 @@ router.put('/:id', authMiddleware, requireRole('admin'), (req, res) => {
   res.json(updated);
 });
 
+// Allow full status set including Sold / Unsold (post-auction corrections)
 router.patch('/:id/status', authMiddleware, requireRole('admin'), (req, res) => {
   const { status } = req.body;
-  if (!['Pending', 'Approved', 'Rejected'].includes(status)) {
-    return res.status(400).json({ error: 'Invalid status. Use Pending, Approved or Rejected' });
+  const allowed = ['Pending', 'Approved', 'Rejected', 'Sold', 'Unsold'];
+  if (!allowed.includes(status)) {
+    return res.status(400).json({ error: `Invalid status. Use ${allowed.join(', ')}` });
   }
+
+  const player = getPlayers().find(p => p.id === req.params.id);
+  if (!player) return res.status(404).json({ error: 'Player not found' });
+
+  // If changing away from Sold, try to clean sold record + refund once
+  if (player.status === 'Sold' && status !== 'Sold') {
+    const data = getData();
+    const soldIdx = data.soldPlayers.findIndex(s => s.playerId === player.id);
+    if (soldIdx !== -1) {
+      const sold = data.soldPlayers[soldIdx];
+      const team = getTeams().find(t => t.id === sold.teamId);
+      if (team) {
+        updateTeam(team.id, { remainingPurse: team.remainingPurse + sold.soldPrice });
+      }
+      data.soldPlayers.splice(soldIdx, 1);
+      persist();
+    }
+  }
+
   const updated = updatePlayer(req.params.id, { status });
-  if (!updated) return res.status(404).json({ error: 'Player not found' });
   res.json(updated);
 });
 
@@ -233,6 +255,18 @@ router.delete('/:id', authMiddleware, requireRole('admin'), (req, res) => {
   const data = getData();
   const idx = data.players.findIndex(p => p.id === req.params.id);
   if (idx === -1) return res.status(404).json({ error: 'Player not found' });
+
+  // If sold, refund and remove sold record
+  const soldIdx = data.soldPlayers.findIndex(s => s.playerId === req.params.id);
+  if (soldIdx !== -1) {
+    const sold = data.soldPlayers[soldIdx];
+    const team = getTeams().find(t => t.id === sold.teamId);
+    if (team) {
+      updateTeam(team.id, { remainingPurse: team.remainingPurse + sold.soldPrice });
+    }
+    data.soldPlayers.splice(soldIdx, 1);
+  }
+
   data.players.splice(idx, 1);
   persist();
   res.json({ message: 'Player deleted' });
