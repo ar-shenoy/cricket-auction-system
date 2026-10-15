@@ -57,6 +57,7 @@ export default function Auction() {
   const [teams, setTeams] = useState<Team[]>([]);
   const [availablePlayers, setAvailablePlayers] = useState<Player[]>([]);
   const [soldList, setSoldList] = useState<SoldRecord[]>([]);
+  const [unsoldPlayers, setUnsoldPlayers] = useState<Player[]>([]);
   const [bidAmount, setBidAmount] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
@@ -74,12 +75,14 @@ export default function Auction() {
       setAuction(active);
       setTeams(teamsRes.data);
       if (active?.id) {
-        const [playersRes, soldRes] = await Promise.all([
+        const [playersRes, soldRes, unsoldRes] = await Promise.all([
           api.get(`/auctions/${active.id}/available-players`),
-          api.get(`/auctions/${active.id}/sold`)
+          api.get(`/auctions/${active.id}/sold`),
+          api.get(`/auctions/${active.id}/unsold-players`).catch(() => ({ data: [] }))
         ]);
         setAvailablePlayers(playersRes.data);
         setSoldList(soldRes.data);
+        setUnsoldPlayers(unsoldRes.data || []);
         if (active.currentPlayerId) {
           const playerRes = await api.get(`/players/${active.currentPlayerId}`);
           setCurrentPlayer(playerRes.data);
@@ -108,6 +111,7 @@ export default function Auction() {
       setBidAmount(String(nextMinBid(data.auction.currentBid || 0, !!data.auction.currentBidderTeamId, data.auction)));
       setMessage({ type: 'info', text: `Now auctioning: ${data.player.name}` });
       api.get(`/auctions/${data.auction.id}/available-players`).then(r => setAvailablePlayers(r.data));
+      api.get(`/auctions/${data.auction.id}/unsold-players`).then(r => setUnsoldPlayers(r.data)).catch(() => {});
     });
     socket.on('new-bid', (data: { auction: Auction; bid: any; team: { id: string; name: string } }) => {
       setAuction(data.auction);
@@ -128,6 +132,7 @@ export default function Auction() {
       if (auction.id) {
         api.get(`/auctions/${auction.id}/sold`).then(r => setSoldList(r.data));
         api.get(`/auctions/${auction.id}/available-players`).then(r => setAvailablePlayers(r.data));
+        api.get(`/auctions/${auction.id}/unsold-players`).then(r => setUnsoldPlayers(r.data)).catch(() => {});
         api.get('/teams').then(r => setTeams(r.data));
       }
     });
@@ -233,9 +238,15 @@ export default function Auction() {
     try {
       const payload: any = { amount: Number(bidAmount) };
       if (user?.role === 'admin') {
-        const tid = adminBidTeamId || teams[0]?.id;
+        const eligible = teams.filter(tm => {
+          if (tm.remainingPurse <= 0) return false;
+          const bought = soldList.filter(s => s.teamId === tm.id).length;
+          if (tm.maxPlayers != null && tm.maxPlayers > 0 && bought >= Number(tm.maxPlayers)) return false;
+          return true;
+        });
+        const tid = adminBidTeamId || eligible[0]?.id;
         if (!tid) {
-          showMsg('error', 'Select a team to bid');
+          showMsg('error', 'Select a team to bid (must have purse and open slots)');
           return;
         }
         payload.teamId = tid;
@@ -315,6 +326,29 @@ export default function Auction() {
       loadAuction();
     } catch (err: any) {
       showMsg('error', err.response?.data?.error || 'Failed');
+    }
+  };
+
+  const canTeamBid = (tm: Team) => {
+    if (!tm || tm.remainingPurse <= 0) return false;
+    const bought = soldList.filter(s => s.teamId === tm.id).length;
+    if (tm.maxPlayers != null && tm.maxPlayers > 0 && bought >= Number(tm.maxPlayers)) return false;
+    return true;
+  };
+
+  const eligibleTeams = teams.filter(canTeamBid);
+
+  const recallUnsold = async () => {
+    if (!auction) return;
+    try {
+      const res = await api.post(`/auctions/${auction.id}/recall-unsold`, {});
+      setAuction(res.data.auction);
+      setCurrentPlayer(res.data.player);
+      setBidAmount(String(nextMinBid(res.data.auction.currentBid || 0, false, res.data.auction)));
+      showMsg('info', `Recalled unsold: ${res.data.player.name} (${res.data.remainingUnsold} left)`);
+      loadAuction();
+    } catch (err: any) {
+      showMsg('error', err.response?.data?.error || 'Recall failed');
     }
   };
 
@@ -426,9 +460,12 @@ export default function Auction() {
                       <div className="mt-6 space-y-3">
                         {user?.role === 'admin' && (
                           <div>
-                            <label className="block text-xs text-gray-500 dark:text-gray-400 mb-2">Select team to bid</label>
+                            <label className="block text-xs text-gray-500 dark:text-gray-400 mb-2">Select team to bid (purse > 0 and squad slots left)</label>
                             <div className="flex flex-wrap gap-2">
-                              {teams.map(tm => {
+                              {eligibleTeams.length === 0 && (
+                                <p className="text-xs text-gray-500 dark:text-gray-400">No teams can bid (purse empty or squad full).</p>
+                              )}
+                              {eligibleTeams.map(tm => {
                                 const bought = soldList.filter(s => s.teamId === tm.id).length;
                                 const maxB = maxBidForTeam(tm.remainingPurse, bought, tm.maxPlayers);
                                 const selected = adminBidTeamId === tm.id;
@@ -453,20 +490,19 @@ export default function Auction() {
                             </div>
                           </div>
                         )}
-                        {user?.role === 'team_manager' && myTeam && (
+                        {user?.role === 'team_manager' && myTeam && canTeamBid(myTeam) && (
                           <p className="text-xs text-gray-500 dark:text-gray-400">
                             Your max bid: ₹{maxBidForTeam(myTeam.remainingPurse, soldList.filter(s => s.teamId === myTeam.id).length, myTeam.maxPlayers).toLocaleString()}
-                            {' '}(₹1,000 reserved per remaining squad slot)
                           </p>
                         )}
                         {user?.role === 'admin' && adminBidTeamId && (() => {
-                          const tm = teams.find(x => x.id === adminBidTeamId);
+                          const tm = eligibleTeams.find(x => x.id === adminBidTeamId);
                           if (!tm) return null;
                           const bought = soldList.filter(s => s.teamId === tm.id).length;
                           const maxB = maxBidForTeam(tm.remainingPurse, bought, tm.maxPlayers);
                           return (
                             <p className="text-xs text-indigo-600 dark:text-indigo-400">
-                              {tm.name} max: ₹{maxB.toLocaleString()} (purse ₹{tm.remainingPurse.toLocaleString()}, {tm.maxPlayers != null ? `${bought}/${tm.maxPlayers} players` : 'no squad limit'})
+                              {tm.name} max: ₹{maxB.toLocaleString()}
                             </p>
                           );
                         })()}
@@ -496,6 +532,11 @@ export default function Auction() {
                     {user?.role === 'admin' && auction.status === 'live' && (
                       <button onClick={nextRandomPlayer} className="mt-4 bg-purple-600 hover:bg-purple-700 text-white px-5 py-2 rounded-lg text-sm font-medium">🎲 Pick random player</button>
                     )}
+                    {user?.role === 'admin' && !auction.currentPlayerId && (
+                      <button onClick={recallUnsold} className="mt-3 ml-2 bg-amber-600 hover:bg-amber-700 text-white px-5 py-2 rounded-lg text-sm font-medium">
+                        🔁 Recall Unsold{unsoldPlayers.length ? ` (${unsoldPlayers.length})` : ''}
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
@@ -519,6 +560,11 @@ export default function Auction() {
                   )}
                   {auction.status === 'live' && (
                     <button onClick={nextRandomPlayer} className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg text-sm font-medium">🎲 Next random player</button>
+                  )}
+                  {!auction.currentPlayerId && (auction.status === 'live' || auction.status === 'paused' || auction.status === 'completed') && (
+                    <button onClick={recallUnsold} className="bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-lg text-sm font-medium">
+                      🔁 Recall Unsold{unsoldPlayers.length ? ` (${unsoldPlayers.length})` : ''}
+                    </button>
                   )}
                   {auction.status !== 'completed' && soldList.length > 0 && (
                     <button onClick={undoLastSell} className="bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-lg text-sm font-medium">↩ Undo last sell</button>
@@ -556,7 +602,10 @@ export default function Auction() {
                 <ul className="space-y-2 text-sm">
                   {teams.map(t => (
                     <li key={t.id} className="flex justify-between text-gray-700 dark:text-gray-300">
-                      <span className={t.id === auction.currentBidderTeamId ? 'font-bold text-indigo-600 dark:text-indigo-400' : ''}>{t.name}</span>
+                      <span className={t.id === auction.currentBidderTeamId ? 'font-bold text-indigo-600 dark:text-indigo-400' : ''}>
+                        {t.name}
+                        {!canTeamBid(t) && <span className="ml-1 text-[10px] text-gray-400">(out)</span>}
+                      </span>
                       <span className="text-green-600 dark:text-green-400">₹{t.remainingPurse.toLocaleString()}</span>
                     </li>
                   ))}
