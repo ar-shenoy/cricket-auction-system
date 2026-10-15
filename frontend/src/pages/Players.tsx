@@ -157,11 +157,7 @@ export default function Players() {
   };
 
   const handleDelete = async (p: Player) => {
-    if (p.status === 'Sold') {
-      alert('Cannot delete a sold player.');
-      return;
-    }
-    if (!confirm(`Delete player "${p.name}"?`)) return;
+    if (!confirm(`Delete player "${p.name}"?${p.status === 'Sold' ? ' Any sale record will be removed and purse refunded.' : ''}`)) return;
     try {
       await api.delete(`/players/${p.id}`);
       loadData();
@@ -298,20 +294,27 @@ export default function Players() {
                         <span className={`px-2 py-1 rounded-full text-xs font-medium ${statusColor(player.status)}`}>{player.status}</span>
                       </td>
                       <td className="px-4 py-3">
-                        <div className="flex flex-wrap gap-2">
+                        <div className="flex flex-wrap gap-2 items-center">
                           {player.status === 'Pending' && (
                             <>
                               <button onClick={() => handleStatusChange(player.id, 'Approved')} className="text-green-600 dark:text-green-400 text-xs font-medium">Approve</button>
                               <button onClick={() => handleStatusChange(player.id, 'Rejected')} className="text-red-600 text-xs font-medium">Reject</button>
                             </>
                           )}
-                          {player.status === 'Approved' && (
-                            <button onClick={() => handleStatusChange(player.id, 'Pending')} className="text-gray-500 dark:text-gray-400 text-xs">Reset</button>
-                          )}
+                          <select
+                            value={player.status}
+                            onChange={e => handleStatusChange(player.id, e.target.value)}
+                            className="text-xs border dark:border-gray-600 rounded px-1 py-0.5 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                            title="Change status"
+                          >
+                            <option value="Pending">Pending</option>
+                            <option value="Approved">Approved</option>
+                            <option value="Rejected">Rejected</option>
+                            <option value="Sold">Sold</option>
+                            <option value="Unsold">Unsold</option>
+                          </select>
                           <button onClick={() => openEdit(player)} className="text-blue-600 dark:text-blue-400 text-xs font-medium">Edit</button>
-                          {player.status !== 'Sold' && (
-                            <button onClick={() => handleDelete(player)} className="text-red-600 text-xs font-medium">Delete</button>
-                          )}
+                          <button onClick={() => handleDelete(player)} className="text-red-600 text-xs font-medium">Delete</button>
                         </div>
                       </td>
                     </tr>
