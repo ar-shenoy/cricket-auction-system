@@ -1,6 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const http = require('http');
+const path = require('path');
 const { Server } = require('socket.io');
 const cors = require('cors');
 
@@ -8,6 +9,7 @@ const authRoutes = require('./routes/auth');
 const teamRoutes = require('./routes/teams');
 const playerRoutes = require('./routes/players');
 const auctionRoutes = require('./routes/auctions');
+const uploadRoutes = require('./routes/upload');
 
 const app = express();
 const server = http.createServer(app);
@@ -19,13 +21,17 @@ const io = new Server(server, {
 });
 
 app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '2mb' }));
+app.use(express.urlencoded({ extended: true, limit: '2mb' }));
+
+// Serve uploaded photos (disk storage path)
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 app.use('/api/auth', authRoutes);
 app.use('/api/teams', teamRoutes);
 app.use('/api/players', playerRoutes);
 app.use('/api/auctions', auctionRoutes);
+app.use('/api/upload', uploadRoutes);
 
 app.get('/api/health', (req, res) => {
   res.json({
@@ -66,7 +72,6 @@ server.listen(PORT, () => {
   console.log(`📡 Socket.IO ready for live bidding`);
   console.log(`🔑 Default Admin: admin@auction.com / admin123\n`);
 
-  // Optional: ping self every 10 min to reduce free-tier sleep (set KEEP_ALIVE_URL to public URL)
   const keepUrl = process.env.KEEP_ALIVE_URL;
   if (keepUrl) {
     const intervalMs = Number(process.env.KEEP_ALIVE_MS) || 10 * 60 * 1000;
