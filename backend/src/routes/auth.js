@@ -1,7 +1,7 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const { getUsers, addUser } = require('../data/store');
+const { getUsers, addUser, getData, persist } = require('../data/store');
 const { JWT_SECRET } = require('../middleware/auth');
 
 const router = express.Router();
@@ -21,18 +21,17 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ error: 'Invalid email or password' });
     }
 
-    // For the default admin, accept plain password on first run and hash it
     let isMatch = false;
-    if (user.password.startsWith('$2a$') || user.password.startsWith('$2b$')) {
+    const isHashed = user.password.startsWith('$2a$') || user.password.startsWith('$2b$');
+
+    if (isHashed) {
       isMatch = await bcrypt.compare(password, user.password);
     } else {
-      // Temporary plain text for initial setup
-      isMatch = password === user.password || password === 'admin123';
+      // First-run plain password (e.g. default admin123)
+      isMatch = password === user.password;
       if (isMatch) {
-        // Hash it for future
-        const hashed = await bcrypt.hash(password, 10);
-        user.password = hashed;
-        // persist happens via store if we update
+        user.password = await bcrypt.hash(password, 10);
+        persist();
       }
     }
 
@@ -62,7 +61,6 @@ router.post('/login', async (req, res) => {
   }
 });
 
-// Register Team Manager (Admin only can create later, but simple register for now)
 router.post('/register', async (req, res) => {
   try {
     const { name, email, password, role = 'team_manager', teamId = null } = req.body;
@@ -82,7 +80,7 @@ router.post('/register', async (req, res) => {
       name,
       email: email.toLowerCase(),
       password: hashed,
-      role: role === 'admin' ? 'team_manager' : role, // prevent self-admin
+      role: role === 'admin' ? 'team_manager' : role,
       teamId
     };
 
@@ -104,7 +102,32 @@ router.post('/register', async (req, res) => {
   }
 });
 
-// Get current user
+// Change password (authenticated)
+router.post('/change-password', require('../middleware/auth').authMiddleware, async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    if (!currentPassword || !newPassword || newPassword.length < 6) {
+      return res.status(400).json({ error: 'Current password and new password (min 6 chars) required' });
+    }
+    const users = getUsers();
+    const user = users.find(u => u.id === req.user.id);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const isHashed = user.password.startsWith('$2a$') || user.password.startsWith('$2b$');
+    const ok = isHashed
+      ? await bcrypt.compare(currentPassword, user.password)
+      : currentPassword === user.password;
+    if (!ok) return res.status(401).json({ error: 'Current password is incorrect' });
+
+    user.password = await bcrypt.hash(newPassword, 10);
+    persist();
+    res.json({ message: 'Password updated' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to change password' });
+  }
+});
+
 router.get('/me', require('../middleware/auth').authMiddleware, (req, res) => {
   const users = getUsers();
   const user = users.find(u => u.id === req.user.id);
