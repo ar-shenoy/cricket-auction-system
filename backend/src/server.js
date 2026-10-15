@@ -18,18 +18,15 @@ const io = new Server(server, {
   }
 });
 
-// Middleware
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/teams', teamRoutes);
 app.use('/api/players', playerRoutes);
 app.use('/api/auctions', auctionRoutes);
 
-// Health check
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',
@@ -38,29 +35,21 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// ==================== SOCKET.IO ====================
 io.on('connection', (socket) => {
   console.log('Client connected:', socket.id);
 
-  // Join a specific auction room
   socket.on('join-auction', (auctionId) => {
     if (auctionId) {
       socket.join(`auction-${auctionId}`);
-      console.log(`Socket ${socket.id} joined auction-${auctionId}`);
       socket.emit('joined', { auctionId });
     }
   });
 
-  // Leave auction room
   socket.on('leave-auction', (auctionId) => {
-    if (auctionId) {
-      socket.leave(`auction-${auctionId}`);
-    }
+    if (auctionId) socket.leave(`auction-${auctionId}`);
   });
 
-  // Client can request current state
   socket.on('request-state', (auctionId) => {
-    // Routes already push updates; this is just a ping
     socket.emit('state-requested', { auctionId });
   });
 
@@ -69,7 +58,6 @@ io.on('connection', (socket) => {
   });
 });
 
-// Make io available to routes
 app.set('io', io);
 
 const PORT = process.env.PORT || 5000;
@@ -77,4 +65,14 @@ server.listen(PORT, () => {
   console.log(`\n🚀 Cricket Auction Backend running on http://localhost:${PORT}`);
   console.log(`📡 Socket.IO ready for live bidding`);
   console.log(`🔑 Default Admin: admin@auction.com / admin123\n`);
+
+  // Optional: ping self every 10 min to reduce free-tier sleep (set KEEP_ALIVE_URL to public URL)
+  const keepUrl = process.env.KEEP_ALIVE_URL;
+  if (keepUrl) {
+    const intervalMs = Number(process.env.KEEP_ALIVE_MS) || 10 * 60 * 1000;
+    setInterval(() => {
+      fetch(`${keepUrl.replace(/\/$/, '')}/api/health`).catch(() => {});
+    }, intervalMs);
+    console.log(`⏱️  Keep-alive enabled → ${keepUrl} every ${intervalMs / 1000}s`);
+  }
 });
