@@ -41,7 +41,7 @@ router.post('/', authMiddleware, requireRole('admin'), async (req, res) => {
   try {
     const {
       name, purse, managerName, managerEmail, managerPassword,
-      maxPlayers, roleCaps
+      maxPlayers, roleCaps, logoUrl
     } = req.body;
 
     if (!name || purse === undefined) {
@@ -60,6 +60,7 @@ router.post('/', authMiddleware, requireRole('admin'), async (req, res) => {
       remainingPurse: Number(purse),
       maxPlayers: maxPlayers != null && maxPlayers !== '' ? Number(maxPlayers) : null,
       roleCaps: roleCaps && typeof roleCaps === 'object' ? roleCaps : null,
+      logoUrl: logoUrl ? String(logoUrl).trim() : '',
       createdAt: new Date().toISOString()
     });
 
@@ -85,7 +86,7 @@ router.post('/', authMiddleware, requireRole('admin'), async (req, res) => {
   }
 });
 
-/** CSV columns: name, purse, max_players (optional), manager_name, manager_email, manager_password */
+/** CSV columns: name, purse, max_players, logo_url (optional), manager_name, manager_email, manager_password */
 router.post('/import', authMiddleware, requireRole('admin'), upload.single('file'), async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'CSV file is required' });
@@ -120,6 +121,7 @@ router.post('/import', authMiddleware, requireRole('admin'), upload.single('file
       const managerName = (row.manager_name || row.manager || '').trim();
       const managerEmail = (row.manager_email || row.email || '').trim();
       const managerPassword = (row.manager_password || row.password || '').trim();
+      const logoUrl = (row.logo_url || row.logo || row.image || '').trim();
 
       if (!name || !purse) {
         skipped++;
@@ -141,6 +143,7 @@ router.post('/import', authMiddleware, requireRole('admin'), upload.single('file
         remainingPurse: purse,
         maxPlayers: maxPlayers && !isNaN(maxPlayers) ? maxPlayers : null,
         roleCaps: null,
+        logoUrl: logoUrl || '',
         createdAt: new Date().toISOString()
       });
 
@@ -171,7 +174,7 @@ router.post('/import', authMiddleware, requireRole('admin'), upload.single('file
 });
 
 router.put('/:id', authMiddleware, requireRole('admin'), (req, res) => {
-  const { name, purse, remainingPurse, maxPlayers, roleCaps } = req.body;
+  const { name, purse, remainingPurse, maxPlayers, roleCaps, logoUrl } = req.body;
   const updates = {};
   if (name) updates.name = name;
   if (purse !== undefined) updates.purse = Number(purse);
@@ -182,6 +185,7 @@ router.put('/:id', authMiddleware, requireRole('admin'), (req, res) => {
   if (roleCaps !== undefined) {
     updates.roleCaps = roleCaps && typeof roleCaps === 'object' ? roleCaps : null;
   }
+  if (logoUrl !== undefined) updates.logoUrl = String(logoUrl || '').trim();
 
   const updated = updateTeam(req.params.id, updates);
   if (!updated) return res.status(404).json({ error: 'Team not found' });
