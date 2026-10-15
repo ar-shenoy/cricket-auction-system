@@ -9,6 +9,7 @@ interface Team {
   name: string;
   purse: number;
   remainingPurse: number;
+  maxPlayers?: number | null;
   createdAt: string;
 }
 
@@ -22,6 +23,7 @@ export default function Teams() {
     name: '',
     purse: '10000000',
     remainingPurse: '',
+    maxPlayers: '',
     managerName: '',
     managerEmail: '',
     managerPassword: ''
@@ -39,7 +41,7 @@ export default function Teams() {
 
   const openCreate = () => {
     setEditing(null);
-    setForm({ name: '', purse: '10000000', remainingPurse: '', managerName: '', managerEmail: '', managerPassword: '' });
+    setForm({ name: '', purse: '10000000', remainingPurse: '', maxPlayers: '15', managerName: '', managerEmail: '', managerPassword: '' });
     setShowModal(true);
   };
 
@@ -49,6 +51,7 @@ export default function Teams() {
       name: team.name,
       purse: String(team.purse),
       remainingPurse: String(team.remainingPurse),
+      maxPlayers: team.maxPlayers != null ? String(team.maxPlayers) : '',
       managerName: '', managerEmail: '', managerPassword: ''
     });
     setShowModal(true);
@@ -57,16 +60,19 @@ export default function Teams() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      const maxPlayers = form.maxPlayers !== '' ? Number(form.maxPlayers) : null;
       if (editing) {
         await api.put(`/teams/${editing.id}`, {
           name: form.name,
           purse: Number(form.purse),
-          remainingPurse: form.remainingPurse !== '' ? Number(form.remainingPurse) : undefined
+          remainingPurse: form.remainingPurse !== '' ? Number(form.remainingPurse) : undefined,
+          maxPlayers
         });
       } else {
         await api.post('/teams', {
           name: form.name,
           purse: Number(form.purse),
+          maxPlayers,
           managerName: form.managerName || undefined,
           managerEmail: form.managerEmail || undefined,
           managerPassword: form.managerPassword || undefined
@@ -81,7 +87,7 @@ export default function Teams() {
   };
 
   const handleDelete = async (team: Team) => {
-    if (!confirm(`Delete team "${team.name}"? This cannot be undone.`)) return;
+    if (!confirm(`Delete team "${team.name}"? Linked manager accounts will also be removed.`)) return;
     try {
       await api.delete(`/teams/${team.id}`);
       loadTeams();
@@ -108,11 +114,9 @@ export default function Teams() {
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         <div className="flex justify-between items-center mb-6">
-          <p className="text-gray-500 dark:text-gray-400">Manage participating teams and their purses.</p>
+          <p className="text-gray-500 dark:text-gray-400">Manage teams, purses, and squad size limits.</p>
           {user?.role === 'admin' && (
-            <button onClick={openCreate} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium">
-              + Create Team
-            </button>
+            <button onClick={openCreate} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium">+ Create Team</button>
           )}
         </div>
 
@@ -128,6 +132,7 @@ export default function Teams() {
                   <th className="px-4 py-3 font-medium text-gray-600 dark:text-gray-300">Team Name</th>
                   <th className="px-4 py-3 font-medium text-gray-600 dark:text-gray-300">Total Purse</th>
                   <th className="px-4 py-3 font-medium text-gray-600 dark:text-gray-300">Remaining</th>
+                  <th className="px-4 py-3 font-medium text-gray-600 dark:text-gray-300">Max players</th>
                   <th className="px-4 py-3 font-medium text-gray-600 dark:text-gray-300">Spent</th>
                   {user?.role === 'admin' && (
                     <th className="px-4 py-3 font-medium text-gray-600 dark:text-gray-300">Actions</th>
@@ -140,6 +145,7 @@ export default function Teams() {
                     <td className="px-4 py-3 font-medium text-gray-900 dark:text-white">{team.name}</td>
                     <td className="px-4 py-3 text-gray-700 dark:text-gray-300">₹{team.purse.toLocaleString()}</td>
                     <td className="px-4 py-3 text-green-600 dark:text-green-400 font-medium">₹{team.remainingPurse.toLocaleString()}</td>
+                    <td className="px-4 py-3 text-gray-700 dark:text-gray-300">{team.maxPlayers ?? '—'}</td>
                     <td className="px-4 py-3 text-red-500">₹{(team.purse - team.remainingPurse).toLocaleString()}</td>
                     {user?.role === 'admin' && (
                       <td className="px-4 py-3">
@@ -172,6 +178,11 @@ export default function Teams() {
                 <input required type="number" value={form.purse} onChange={e => setForm({ ...form, purse: e.target.value })}
                   className="w-full border dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white" />
               </div>
+              <div>
+                <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">Max players (optional)</label>
+                <input type="number" min={1} value={form.maxPlayers} onChange={e => setForm({ ...form, maxPlayers: e.target.value })}
+                  className="w-full border dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white" placeholder="e.g. 15" />
+              </div>
               {editing && (
                 <div>
                   <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">Remaining Purse (₹)</label>
@@ -201,13 +212,9 @@ export default function Teams() {
                 </>
               )}
               <div className="flex gap-3 pt-2">
-                <button type="submit" className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg font-medium">
-                  {editing ? 'Save Changes' : 'Create Team'}
-                </button>
+                <button type="submit" className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg font-medium">{editing ? 'Save Changes' : 'Create Team'}</button>
                 <button type="button" onClick={() => { setShowModal(false); setEditing(null); }}
-                  className="flex-1 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-900 dark:text-white py-2 rounded-lg">
-                  Cancel
-                </button>
+                  className="flex-1 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-900 dark:text-white py-2 rounded-lg">Cancel</button>
               </div>
             </form>
           </div>
