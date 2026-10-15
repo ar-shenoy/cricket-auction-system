@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
@@ -18,6 +18,9 @@ export default function Teams() {
   const [teams, setTeams] = useState<Team[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<any>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [editing, setEditing] = useState<Team | null>(null);
   const [form, setForm] = useState({
     name: '',
@@ -96,6 +99,25 @@ export default function Teams() {
     }
   };
 
+  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImporting(true);
+    setImportResult(null);
+    const formData = new FormData();
+    formData.append('file', file);
+    try {
+      const res = await api.post('/teams/import', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+      setImportResult(res.data);
+      loadTeams();
+    } catch (err: any) {
+      setImportResult({ error: err.response?.data?.error || 'Import failed' });
+    } finally {
+      setImporting(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors">
       <header className="bg-white dark:bg-gray-800 shadow-sm border-b dark:border-gray-700 sticky top-0 z-10">
@@ -116,15 +138,29 @@ export default function Teams() {
         <div className="flex justify-between items-center mb-6">
           <p className="text-gray-500 dark:text-gray-400">Manage teams, purses, and squad size limits.</p>
           {user?.role === 'admin' && (
-            <button onClick={openCreate} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium">+ Create Team</button>
+            <div className="flex gap-2">
+              <button onClick={openCreate} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium">+ Create Team</button>
+              <label className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium cursor-pointer">
+                {importing ? 'Importing...' : '📥 Import CSV'}
+                <input ref={fileInputRef} type="file" accept=".csv" onChange={handleImport} className="hidden" disabled={importing} />
+              </label>
+            </div>
           )}
         </div>
+
+        {importResult && (
+          <div className={`mb-4 p-4 rounded-lg text-sm ${importResult.error ? 'bg-red-50 dark:bg-red-900/20 text-red-700' : 'bg-green-50 dark:bg-green-900/20 text-green-700'}`}>
+            {importResult.error ? importResult.error : `✅ Imported ${importResult.imported} teams (skipped ${importResult.skipped})`}
+            <button onClick={() => setImportResult(null)} className="ml-3 underline text-xs">Dismiss</button>
+          </div>
+        )}
+        <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">CSV columns: name, purse, max_players (optional), manager_name, manager_email, manager_password</p>
 
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border dark:border-gray-700 overflow-hidden">
           {loading ? (
             <div className="p-8 text-center text-gray-500 dark:text-gray-400">Loading teams...</div>
           ) : teams.length === 0 ? (
-            <div className="p-8 text-center text-gray-500 dark:text-gray-400">No teams yet. Create your first team.</div>
+            <div className="p-8 text-center text-gray-500 dark:text-gray-400">No teams yet. Create or import CSV.</div>
           ) : (
             <table className="w-full text-left text-sm">
               <thead className="bg-gray-50 dark:bg-gray-700/50 border-b dark:border-gray-700">
