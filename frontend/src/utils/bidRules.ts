@@ -10,6 +10,9 @@ export const DEFAULT_BID_RULES: BidRule[] = [
   { upTo: null, increment: 5000 },
 ];
 
+/** Floor reserved per remaining squad slot so the team can still fill the roster. */
+export const MIN_SLOT_RESERVE = 1000;
+
 export function getIncrement(
   currentBid: number,
   auction?: { bidRules?: BidRule[]; bidIncrement?: number } | null
@@ -33,4 +36,24 @@ export function nextMinBid(
 ): number {
   const step = getIncrement(currentBid, auction);
   return hasBidder ? currentBid + step : Math.max(currentBid, 0);
+}
+
+/**
+ * Max a team can bid on the current player while still being able to
+ * fill remaining squad slots at MIN_SLOT_RESERVE each.
+ *
+ * Example: maxPlayers=10, already bought 1, purse 50k →
+ *   slots left after this buy = 8 → max = 50000 - 8*1000 = 42000
+ */
+export function maxBidForTeam(
+  remainingPurse: number,
+  playersAlreadyBought: number,
+  maxPlayers: number | null | undefined
+): number {
+  if (maxPlayers == null || maxPlayers <= 0) {
+    return remainingPurse;
+  }
+  const slotsAfterThis = Math.max(0, Number(maxPlayers) - playersAlreadyBought - 1);
+  const reserve = slotsAfterThis * MIN_SLOT_RESERVE;
+  return Math.max(0, remainingPurse - reserve);
 }
