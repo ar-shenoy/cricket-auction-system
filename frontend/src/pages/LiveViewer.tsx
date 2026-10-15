@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import api from '../services/api';
+import { publicApi, getSocketUrl } from '../services/api';
 import { io, Socket } from 'socket.io-client';
 import ThemeToggle from '../components/ThemeToggle';
 
@@ -38,24 +38,41 @@ export default function LiveViewer() {
   const [soldList, setSoldList] = useState<any[]>([]);
   const [timeLeft, setTimeLeft] = useState(0);
   const [message, setMessage] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
   const socketRef = useRef<Socket | null>(null);
   const timerRef = useRef<any>(null);
+
+  const shareUrl = typeof window !== 'undefined' ? `${window.location.origin}/live` : '/live';
+
+  const copyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      prompt('Copy this link:', shareUrl);
+    }
+  };
 
   useEffect(() => {
     const load = async () => {
       try {
         const [aRes, tRes] = await Promise.all([
-          api.get('/auctions/active'),
-          api.get('/teams')
+          publicApi.get('/auctions/public/active'),
+          publicApi.get('/teams')
         ]);
         setAuction(aRes.data);
         setTeams(tRes.data);
         if (aRes.data?.id) {
-          const soldRes = await api.get(`/auctions/${aRes.data.id}/sold`);
+          const soldRes = await publicApi.get(`/auctions/${aRes.data.id}/public/sold`);
           setSoldList(soldRes.data);
           if (aRes.data.currentPlayerId) {
-            const pRes = await api.get(`/players/${aRes.data.currentPlayerId}`);
-            setCurrentPlayer(pRes.data);
+            try {
+              const pRes = await publicApi.get(`/players/public/${aRes.data.currentPlayerId}`);
+              setCurrentPlayer(pRes.data);
+            } catch {
+              // player public route may not exist yet — ignore
+            }
           }
         }
       } catch (e) {
@@ -63,13 +80,13 @@ export default function LiveViewer() {
       }
     };
     load();
+    const poll = setInterval(load, 15000);
+    return () => clearInterval(poll);
   }, []);
 
   useEffect(() => {
     if (!auction?.id) return;
-    const socket = io(window.location.origin.includes('localhost')
-      ? 'http://localhost:5000'
-      : window.location.origin, { transports: ['websocket', 'polling'] });
+    const socket = io(getSocketUrl(), { transports: ['websocket', 'polling'] });
     socketRef.current = socket;
     socket.emit('join-auction', auction.id);
 
@@ -85,15 +102,16 @@ export default function LiveViewer() {
     socket.on('player-sold', (data: any) => {
       setAuction(data.auction);
       setCurrentPlayer(null);
-      setMessage(data.result.status === 'Sold'
-        ? `SOLD! ${data.result.player?.name} → ${data.result.team?.name}`
-        : `UNSOLD: ${data.result.player?.name}`);
-      if (auction.id) {
-        api.get(`/auctions/${auction.id}/sold`).then(r => setSoldList(r.data));
-        api.get('/teams').then(r => setTeams(r.data));
-      }
+      setMessage(
+        data.result.status === 'Sold'
+          ? `SOLD! ${data.result.player?.name} → ${data.result.team?.name}`
+          : `UNSOLD: ${data.result.player?.name}`
+      );
+      publicApi.get(`/auctions/${auction.id}/public/sold`).then(r => setSoldList(r.data));
+      publicApi.get('/teams').then(r => setTeams(r.data));
     });
     socket.on('auction-status', (data: any) => setAuction(data));
+    socket.on('auction-started', (data: any) => setAuction(data));
     socket.on('auction-ended', (data: any) => {
       setAuction(data);
       setCurrentPlayer(null);
@@ -116,7 +134,9 @@ export default function LiveViewer() {
       tick();
       timerRef.current = setInterval(tick, 250);
     } else setTimeLeft(0);
-    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
   }, [auction?.timerEndsAt, auction?.status, currentPlayer]);
 
   const currentBidder = teams.find(t => t.id === auction?.currentBidderTeamId)?.name || '—';
@@ -124,17 +144,25 @@ export default function LiveViewer() {
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors">
       <header className="bg-white dark:bg-gray-800 shadow-sm border-b dark:border-gray-700 sticky top-0 z-20">
-        <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
+        <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-3 min-w-0">
             <span className="text-2xl">🏏</span>
-            <div>
-              <h1 className="font-bold text-gray-900 dark:text-white">Live Auction</h1>
-              <p className="text-xs text-gray-500 dark:text-gray-400">Public Viewer Mode</p>
+            <div className="min-w-0">
+              <h1 className="font-bold text-gray-900 dark:text-white truncate">
+                {auction?.name || 'Live Auction'}
+              </h1>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Public viewer · no login needed</p>
             </div>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={copyLink}
+              className="text-xs sm:text-sm bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg"
+            >
+              {copied ? 'Copied!' : 'Share link'}
+            </button>
             <ThemeToggle />
-            <Link to="/login" className="text-sm text-blue-600 dark:text-blue-400 hover:underline">Login</Link>
+            <Link to="/login" className="text-sm text-blue-600 dark:text-blue-400 hover:underline hidden sm:inline">Login</Link>
           </div>
         </div>
       </header>
@@ -147,8 +175,9 @@ export default function LiveViewer() {
 
       <main className="max-w-5xl mx-auto px-4 py-6">
         {!auction || auction.status === 'draft' || auction.status === 'completed' ? (
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-10 text-center text-gray-500 dark:text-gray-400">
-            {auction?.status === 'completed' ? 'This auction has ended.' : 'Waiting for the auction to start...'}
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-10 text-center text-gray-500 dark:text-gray-400 border dark:border-gray-700">
+            {auction?.status === 'completed' ? 'This auction has ended.' : 'Waiting for the auction to go live...'}
+            <p className="text-xs mt-3 text-gray-400">Share this page: {shareUrl}</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -168,13 +197,22 @@ export default function LiveViewer() {
                           <h2 className="text-3xl font-bold text-gray-900 dark:text-white">{currentPlayer.name}</h2>
                           <div className="flex flex-wrap gap-2 mt-2">
                             <span className="bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 text-xs px-2 py-1 rounded-full">{currentPlayer.role}</span>
-                            {currentPlayer.city && <span className="bg-gray-100 dark:bg-gray-700 text-xs px-2 py-1 rounded-full">{currentPlayer.city}</span>}
+                            {currentPlayer.city && (
+                              <span className="bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 text-xs px-2 py-1 rounded-full">{currentPlayer.city}</span>
+                            )}
+                            <span className="bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 text-xs px-2 py-1 rounded-full">
+                              Base ₹{(currentPlayer.basePrice || 0).toLocaleString()}
+                            </span>
                           </div>
                         </div>
                       </div>
-                      <div className={`text-center px-5 py-3 rounded-xl ${timeLeft <= 5 ? 'bg-red-100 dark:bg-red-900/40' : 'bg-green-50 dark:bg-green-900/30'}`}>
-                        <div className="text-xs uppercase text-gray-500">Time Left</div>
-                        <div className={`text-4xl font-bold tabular-nums ${timeLeft <= 5 ? 'text-red-600' : 'text-green-700 dark:text-green-400'}`}>
+                      <div className={`text-center px-5 py-3 rounded-xl ${
+                        timeLeft <= 5 ? 'bg-red-100 dark:bg-red-900/40' : 'bg-green-50 dark:bg-green-900/30'
+                      }`}>
+                        <div className="text-xs uppercase text-gray-500 dark:text-gray-400">Time Left</div>
+                        <div className={`text-4xl font-bold tabular-nums ${
+                          timeLeft <= 5 ? 'text-red-600' : 'text-green-700 dark:text-green-400'
+                        }`}>
                           {Math.floor(timeLeft / 60)}:{String(timeLeft % 60).padStart(2, '0')}
                         </div>
                       </div>
@@ -183,7 +221,7 @@ export default function LiveViewer() {
                     <div className="mt-6 grid grid-cols-2 gap-4">
                       <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 text-center">
                         <div className="text-xs text-gray-500 dark:text-gray-400">Current Bid</div>
-                        <div className="text-2xl font-bold">₹{(auction.currentBid || 0).toLocaleString()}</div>
+                        <div className="text-2xl font-bold text-gray-900 dark:text-white">₹{(auction.currentBid || 0).toLocaleString()}</div>
                       </div>
                       <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 text-center">
                         <div className="text-xs text-gray-500 dark:text-gray-400">Highest Bidder</div>
@@ -202,11 +240,11 @@ export default function LiveViewer() {
               <div className="bg-white dark:bg-gray-800 rounded-xl shadow border dark:border-gray-700 p-4">
                 <h3 className="font-semibold mb-3 text-gray-900 dark:text-white">Recently Sold</h3>
                 {soldList.length === 0 ? (
-                  <p className="text-sm text-gray-500">No players sold yet.</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">No players sold yet.</p>
                 ) : (
                   <div className="space-y-2 max-h-60 overflow-y-auto">
-                    {soldList.slice().reverse().slice(0, 10).map((s: any) => (
-                      <div key={s.id} className="flex justify-between text-sm border-b dark:border-gray-700 pb-2">
+                    {soldList.slice().reverse().slice(0, 15).map((s: any) => (
+                      <div key={s.id} className="flex justify-between text-sm border-b dark:border-gray-700 pb-2 text-gray-800 dark:text-gray-200">
                         <span className="font-medium">{s.player?.name}</span>
                         <span className="text-green-600 dark:text-green-400">₹{s.soldPrice?.toLocaleString()} → {s.team?.name}</span>
                       </div>
@@ -220,7 +258,7 @@ export default function LiveViewer() {
               <h3 className="font-semibold mb-3 text-gray-900 dark:text-white">Teams Purse</h3>
               <div className="space-y-2">
                 {teams.map(t => (
-                  <div key={t.id} className="flex justify-between text-sm">
+                  <div key={t.id} className="flex justify-between text-sm text-gray-800 dark:text-gray-200">
                     <span className={t.id === auction.currentBidderTeamId ? 'text-indigo-600 dark:text-indigo-400 font-medium' : ''}>
                       {t.name}
                     </span>
