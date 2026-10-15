@@ -209,25 +209,15 @@ router.post('/:id/bid', authMiddleware, (req, res) => {
   if (isNaN(bidAmount) || bidAmount <= 0) {
     return res.status(400).json({ error: 'Invalid bid amount' });
   }
-  const increment = getIncrement(auction.currentBid, auction);
-  const minBid = auction.currentBidderTeamId
-    ? auction.currentBid + increment
-    : Math.max(auction.currentBid, 0);
-  if (bidAmount < minBid) {
-    return res.status(400).json({
-      error: `Bid must be at least ₹${minBid.toLocaleString()} (step +₹${increment.toLocaleString()})`,
-      minBid,
-      increment
-    });
+
+  const soldForTeam = getSoldPlayers().filter(s => s.teamId === finalTeamId && s.auctionId === auction.id);
+  if (team.maxPlayers != null && soldForTeam.length >= Number(team.maxPlayers)) {
+    return res.status(400).json({ error: `Team has reached max players (${team.maxPlayers})` });
   }
   if (team.remainingPurse < bidAmount) {
     return res.status(400).json({
       error: `Insufficient purse. Remaining: ₹${team.remainingPurse.toLocaleString()}`
     });
-  }
-  const soldForTeam = getSoldPlayers().filter(s => s.teamId === finalTeamId && s.auctionId === auction.id);
-  if (team.maxPlayers != null && soldForTeam.length >= Number(team.maxPlayers)) {
-    return res.status(400).json({ error: `Team has reached max players (${team.maxPlayers})` });
   }
   const maxAllowed = maxBidForTeam(team, soldForTeam.length);
   if (bidAmount > maxAllowed) {
@@ -236,6 +226,37 @@ router.post('/:id/bid', authMiddleware, (req, res) => {
       maxBid: maxAllowed
     });
   }
+
+  const increment = getIncrement(auction.currentBid, auction);
+  const minBid = auction.currentBidderTeamId
+    ? auction.currentBid + increment
+    : Math.max(auction.currentBid, 0);
+
+  // Last squad slot (or all-in of full remaining purse): allow any amount that
+  // still beats the current bid, even if it is not aligned to the step ladder.
+  const slotsLeftIncludingThis =
+    team.maxPlayers != null && team.maxPlayers > 0
+      ? Number(team.maxPlayers) - soldForTeam.length
+      : null;
+  const isLastSlot = slotsLeftIncludingThis === 1;
+  const isAllIn = bidAmount === team.remainingPurse || bidAmount === maxAllowed;
+  const beatsCurrent = auction.currentBidderTeamId
+    ? bidAmount > auction.currentBid
+    : bidAmount >= Math.max(auction.currentBid, 0);
+
+  if (bidAmount < minBid) {
+    if ((isLastSlot || isAllIn) && beatsCurrent) {
+      // allowed — final slot / purse dump
+    } else {
+      return res.status(400).json({
+        error: `Bid must be at least ₹${minBid.toLocaleString()} (step +₹${increment.toLocaleString()}). On last squad slot you may bid your full remaining purse if it is higher than the current bid.`,
+        minBid,
+        increment,
+        maxBid: maxAllowed
+      });
+    }
+  }
+
   if (team.roleCaps && typeof team.roleCaps === 'object') {
     const player = getPlayers().find(p => p.id === auction.currentPlayerId);
     if (player && team.roleCaps[player.role] != null) {
