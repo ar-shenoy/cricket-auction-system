@@ -45,7 +45,7 @@ router.get('/', authMiddleware, (req, res) => {
 
 router.get('/active', authMiddleware, (req, res) => {
   const auctions = getAuctions();
-  const active = auctions.find(a => a.status === 'live' || a.status === 'paused') ||
+  const active = auctions.find(a => a.status === 'live' || a.status === 'paused' || a.status === 'draft') ||
                  auctions.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0] || null;
   res.json(active);
 });
@@ -117,8 +117,8 @@ router.post('/:id/start', authMiddleware, requireRole('admin'), (req, res) => {
   const auction = getAuctions().find(a => a.id === req.params.id);
   if (!auction) return res.status(404).json({ error: 'Auction not found' });
   if (auction.status === 'live') return res.status(400).json({ error: 'Already live' });
-  if (auction.status === 'completed') return res.status(400).json({ error: 'Auction already completed' });
-  const updated = updateAuction(auction.id, { status: 'live', startedAt: new Date().toISOString() });
+  if (auction.status === 'completed') return res.status(400).json({ error: 'Auction already completed. Use Restart or New Auction.' });
+  const updated = updateAuction(auction.id, { status: 'live', startedAt: new Date().toISOString(), timerEndsAt: null });
   const io = req.app.get('io');
   if (io) io.to(`auction-${auction.id}`).emit('auction-started', updated);
   res.json(updated);
@@ -130,11 +130,35 @@ router.post('/:id/pause', authMiddleware, requireRole('admin'), (req, res) => {
   const newStatus = auction.status === 'live' ? 'paused' : 'live';
   const updated = updateAuction(auction.id, {
     status: newStatus,
-    timerEndsAt: newStatus === 'paused' ? null : auction.timerEndsAt
+    timerEndsAt: null
   });
   const io = req.app.get('io');
   if (io) io.to(`auction-${auction.id}`).emit('auction-status', updated);
   res.json(updated);
+});
+
+/** Pick a random Approved player and put them on the block */
+router.post('/:id/next-random', authMiddleware, requireRole('admin'), (req, res) => {
+  const auction = getAuctions().find(a => a.id === req.params.id);
+  if (!auction) return res.status(404).json({ error: 'Auction not found' });
+  if (auction.status !== 'live' && auction.status !== 'paused') {
+    return res.status(400).json({ error: 'Auction is not live' });
+  }
+  const available = getPlayers().filter(p => p.status === 'Approved');
+  if (available.length === 0) {
+    return res.status(400).json({ error: 'No approved players left' });
+  }
+  const player = available[Math.floor(Math.random() * available.length)];
+  const updated = updateAuction(auction.id, {
+    currentPlayerId: player.id,
+    currentBid: player.basePrice || 0,
+    currentBidderTeamId: null,
+    timerEndsAt: null,
+    status: 'live'
+  });
+  const io = req.app.get('io');
+  if (io) io.to(`auction-${auction.id}`).emit('player-selected', { auction: updated, player });
+  res.json({ auction: updated, player });
 });
 
 router.post('/:id/select-player', authMiddleware, requireRole('admin'), (req, res) => {
@@ -149,12 +173,11 @@ router.post('/:id/select-player', authMiddleware, requireRole('admin'), (req, re
   if (player.status !== 'Approved') {
     return res.status(400).json({ error: 'Only Approved players can be auctioned' });
   }
-  const timerEndsAt = new Date(Date.now() + (auction.bidTimerSeconds * 1000)).toISOString();
   const updated = updateAuction(auction.id, {
     currentPlayerId: playerId,
     currentBid: player.basePrice || 0,
     currentBidderTeamId: null,
-    timerEndsAt,
+    timerEndsAt: null,
     status: 'live'
   });
   const io = req.app.get('io');
@@ -223,11 +246,10 @@ router.post('/:id/bid', authMiddleware, (req, res) => {
     amount: bidAmount,
     createdAt: new Date().toISOString()
   });
-  const timerEndsAt = new Date(Date.now() + (auction.bidTimerSeconds * 1000)).toISOString();
   const updatedAuction = updateAuction(auction.id, {
     currentBid: bidAmount,
     currentBidderTeamId: finalTeamId,
-    timerEndsAt
+    timerEndsAt: null
   });
   const io = req.app.get('io');
   if (io) {
@@ -325,9 +347,7 @@ router.post('/:id/undo-last-sell', authMiddleware, requireRole('admin'), (req, r
   const player = getPlayers().find(p => p.id === last.playerId);
   const result = { status: 'Undone', player, team, price: last.soldPrice };
   const io = req.app.get('io');
-  if (io) {
-    io.to(`auction-${auction.id}`).emit('player-sold', { auction, result });
-  }
+  if (io) io.to(`auction-${auction.id}`).emit('player-sold', { auction, result });
   res.json({ message: 'Last sale undone', result });
 });
 
@@ -345,6 +365,105 @@ router.post('/:id/end', authMiddleware, requireRole('admin'), (req, res) => {
   const io = req.app.get('io');
   if (io) io.to(`auction-${auction.id}`).emit('auction-ended', updated);
   res.json(updated);
+});
+
+/** Restart same auction: refund purses, clear sold for this auction, set Sold/Unsold players back to Approved */
+router.post('/:id/restart', authMiddleware, requireRole('admin'), (req, res) => {
+  const auction = getAuctions().find(a => a.id === req.params.id);
+  if (!auction) return res.status(404).json({ error: 'Auction not found' });
+
+  const data = getData();
+  const soldForAuction = data.soldPlayers.filter(s => s.auctionId === auction.id);
+
+  // Refund purses
+  soldForAuction.forEach(s => {
+    const team = getTeams().find(t => t.id === s.teamId);
+    if (team) {
+      updateTeam(team.id, { remainingPurse: team.remainingPurse + s.soldPrice });
+    }
+    updatePlayer(s.playerId, { status: 'Approved' });
+  });
+
+  // Also re-approve Unsold players so they can be auctioned again
+  getPlayers().forEach(p => {
+    if (p.status === 'Unsold') updatePlayer(p.id, { status: 'Approved' });
+  });
+
+  data.soldPlayers = data.soldPlayers.filter(s => s.auctionId !== auction.id);
+  data.bids = data.bids.filter(b => b.auctionId !== auction.id);
+  persist();
+
+  const updated = updateAuction(auction.id, {
+    status: 'draft',
+    currentPlayerId: null,
+    currentBid: 0,
+    currentBidderTeamId: null,
+    timerEndsAt: null,
+    startedAt: null,
+    completedAt: null
+  });
+
+  const io = req.app.get('io');
+  if (io) io.to(`auction-${auction.id}`).emit('auction-status', updated);
+  res.json({ auction: updated, message: 'Auction restarted. Players back to Approved, purses refunded.' });
+});
+
+/** Fresh start: end any active auction context, reset all team purses, clear all sold/bids, re-approve all players, create new draft auction */
+router.post('/fresh', authMiddleware, requireRole('admin'), (req, res) => {
+  const data = getData();
+
+  // Mark any live/paused/draft as completed
+  getAuctions().forEach(a => {
+    if (a.status !== 'completed') {
+      updateAuction(a.id, {
+        status: 'completed',
+        completedAt: new Date().toISOString(),
+        currentPlayerId: null,
+        currentBid: 0,
+        currentBidderTeamId: null,
+        timerEndsAt: null
+      });
+    }
+  });
+
+  // Reset team purses to full purse
+  getTeams().forEach(t => {
+    updateTeam(t.id, { remainingPurse: t.purse });
+  });
+
+  // Clear sold + bids entirely
+  data.soldPlayers = [];
+  data.bids = [];
+
+  // All Sold/Unsold → Approved (keep Rejected/Pending as-is)
+  getPlayers().forEach(p => {
+    if (p.status === 'Sold' || p.status === 'Unsold') {
+      updatePlayer(p.id, { status: 'Approved' });
+    }
+  });
+  persist();
+
+  const rules = normalizeBidRules(req.body.bidRules);
+  const auction = addAuction({
+    id: uuidv4(),
+    name: req.body.name || `Auction ${new Date().toLocaleDateString()}`,
+    status: 'draft',
+    currentPlayerId: null,
+    currentBid: 0,
+    currentBidderTeamId: null,
+    bidIncrement: rules[0]?.increment || 1000,
+    bidRules: rules,
+    bidTimerSeconds: 20,
+    timerEndsAt: null,
+    createdAt: new Date().toISOString(),
+    startedAt: null,
+    completedAt: null
+  });
+
+  res.status(201).json({
+    auction,
+    message: 'Fresh auction created. Team purses reset. Sold players set to Approved. Configure teams/players if needed, then Start.'
+  });
 });
 
 router.get('/:id/bids', authMiddleware, (req, res) => {
