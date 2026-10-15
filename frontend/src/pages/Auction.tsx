@@ -538,11 +538,6 @@ export default function Auction() {
                     {user?.role === 'admin' && auction.status === 'live' && (
                       <button onClick={nextRandomPlayer} className="mt-4 bg-purple-600 hover:bg-purple-700 text-white px-5 py-2 rounded-lg text-sm font-medium">🎲 Pick random player</button>
                     )}
-                    {user?.role === 'admin' && !auction.currentPlayerId && unsoldPlayers.length > 0 && (
-                      <button onClick={recallUnsold} className="mt-3 ml-2 bg-amber-600 hover:bg-amber-700 text-white px-5 py-2 rounded-lg text-sm font-medium">
-                        🔁 Recall Unsold ({unsoldPlayers.length})
-                      </button>
-                    )}
                   </div>
                 )}
               </div>
@@ -567,13 +562,13 @@ export default function Auction() {
                   {auction.status === 'live' && (
                     <button onClick={nextRandomPlayer} className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg text-sm font-medium">🎲 Next random player</button>
                   )}
-                  {!auction.currentPlayerId && unsoldPlayers.length > 0 && (auction.status === 'live' || auction.status === 'paused' || auction.status === 'completed') && (
+                  {auction.status !== 'completed' && soldList.length > 0 && (
+                    <button onClick={undoLastSell} className="bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-lg text-sm font-medium">↩ Undo last sell</button>
+                  )}
+                  {unsoldPlayers.length > 0 && (auction.status === 'live' || auction.status === 'paused' || auction.status === 'completed') && (
                     <button onClick={recallUnsold} className="bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-lg text-sm font-medium">
                       🔁 Recall Unsold ({unsoldPlayers.length})
                     </button>
-                  )}
-                  {auction.status !== 'completed' && soldList.length > 0 && (
-                    <button onClick={undoLastSell} className="bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-lg text-sm font-medium">↩ Undo last sell</button>
                   )}
                   {auction.status !== 'completed' && (
                     <button onClick={endAuction} className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-medium">End Auction</button>
