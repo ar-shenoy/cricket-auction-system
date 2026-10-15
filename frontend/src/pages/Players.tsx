@@ -170,6 +170,17 @@ export default function Players() {
     setSelected(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
   };
 
+  const pendingIds = players.filter(p => p.status === 'Pending').map(p => p.id);
+  const allPendingSelected = pendingIds.length > 0 && pendingIds.every(id => selected.includes(id));
+
+  const selectAllPending = () => {
+    if (allPendingSelected) {
+      setSelected(prev => prev.filter(id => !pendingIds.includes(id)));
+    } else {
+      setSelected(prev => Array.from(new Set([...prev, ...pendingIds])));
+    }
+  };
+
   const statusColor = (status: string) => {
     switch (status) {
       case 'Pending': return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300';
@@ -235,6 +246,11 @@ export default function Players() {
             </form>
           </div>
           <div className="flex flex-wrap gap-2">
+            {pendingIds.length > 0 && (
+              <button onClick={selectAllPending} className="bg-gray-200 dark:bg-gray-600 hover:bg-gray-300 dark:hover:bg-gray-500 text-gray-900 dark:text-white px-4 py-2 rounded-lg text-sm font-medium">
+                {allPendingSelected ? 'Deselect all' : `Select all pending (${pendingIds.length})`}
+              </button>
+            )}
             {selected.length > 0 && (
               <button onClick={handleBulkApprove} className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-medium">
                 Approve Selected ({selected.length})
@@ -267,7 +283,16 @@ export default function Players() {
               <table className="w-full text-left text-sm">
                 <thead className="bg-gray-50 dark:bg-gray-700/50 border-b dark:border-gray-700">
                   <tr>
-                    <th className="px-4 py-3"></th>
+                    <th className="px-4 py-3">
+                      {pendingIds.length > 0 && (
+                        <input
+                          type="checkbox"
+                          checked={allPendingSelected}
+                          onChange={selectAllPending}
+                          title="Select all pending"
+                        />
+                      )}
+                    </th>
                     <th className="px-4 py-3 font-medium text-gray-600 dark:text-gray-300">Name</th>
                     <th className="px-4 py-3 font-medium text-gray-600 dark:text-gray-300">Role</th>
                     <th className="px-4 py-3 font-medium text-gray-600 dark:text-gray-300">Mobile</th>
