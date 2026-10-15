@@ -129,6 +129,8 @@ export default function Auction() {
         type: data.result.status === 'Sold' ? 'success' : 'info',
         text: data.result.status === 'Sold'
           ? `SOLD! ${data.result.player?.name} to ${data.result.team?.name} for ₹${data.result.price?.toLocaleString()}`
+          : data.result.status === 'Undone'
+          ? `Undone: ${data.result.player?.name}`
           : `UNSOLD: ${data.result.player?.name}`
       });
       if (auction.id) {
@@ -268,6 +270,25 @@ export default function Auction() {
       await api.post(`/auctions/${auction.id}/unsold`);
     } catch (err: any) {
       showMsg('error', err.response?.data?.error || 'Failed');
+    }
+  };
+
+  const undoLastSell = async () => {
+    if (!auction) return;
+    if (!confirm('Undo the last sold player? Purse will be refunded and player set back to Approved.')) return;
+    try {
+      await api.post(`/auctions/${auction.id}/undo-last-sell`);
+      showMsg('info', 'Last sale undone');
+      const [soldRes, teamsRes, playersRes] = await Promise.all([
+        api.get(`/auctions/${auction.id}/sold`),
+        api.get('/teams'),
+        api.get(`/auctions/${auction.id}/available-players`)
+      ]);
+      setSoldList(soldRes.data);
+      setTeams(teamsRes.data);
+      setAvailablePlayers(playersRes.data);
+    } catch (err: any) {
+      showMsg('error', err.response?.data?.error || 'Undo failed');
     }
   };
 
@@ -438,6 +459,9 @@ export default function Auction() {
                   )}
                   {(auction.status === 'live' || auction.status === 'paused') && (
                     <button onClick={pauseAuction} className="bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 rounded-lg text-sm font-medium">{auction.status === 'live' ? '⏸ Pause' : '▶️ Resume'}</button>
+                  )}
+                  {auction.status !== 'completed' && soldList.length > 0 && (
+                    <button onClick={undoLastSell} className="bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-lg text-sm font-medium">↩ Undo last sell</button>
                   )}
                   {auction.status !== 'completed' && (
                     <button onClick={endAuction} className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-medium">End Auction</button>
