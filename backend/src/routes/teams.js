@@ -1,29 +1,27 @@
 const express = require('express');
-const { getTeams, addTeam, updateTeam, getUsers, addUser } = require('../data/store');
+const { getTeams, addTeam, updateTeam, getUsers, addUser, getSoldPlayers, persist } = require('../data/store');
 const { authMiddleware, requireRole } = require('../middleware/auth');
 const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
 
 const router = express.Router();
 
-// Get all teams (public for live viewer)
 router.get('/', (req, res) => {
-  const teams = getTeams();
-  res.json(teams);
+  res.json(getTeams());
 });
 
-// Get single team
 router.get('/:id', authMiddleware, (req, res) => {
-  const teams = getTeams();
-  const team = teams.find(t => t.id === req.params.id);
+  const team = getTeams().find(t => t.id === req.params.id);
   if (!team) return res.status(404).json({ error: 'Team not found' });
   res.json(team);
 });
 
-// Create team (Admin only)
 router.post('/', authMiddleware, requireRole('admin'), async (req, res) => {
   try {
-    const { name, purse, managerName, managerEmail, managerPassword } = req.body;
+    const {
+      name, purse, managerName, managerEmail, managerPassword,
+      maxPlayers, roleCaps
+    } = req.body;
 
     if (!name || purse === undefined) {
       return res.status(400).json({ error: 'Team name and purse are required' });
@@ -39,10 +37,11 @@ router.post('/', authMiddleware, requireRole('admin'), async (req, res) => {
       name,
       purse: Number(purse),
       remainingPurse: Number(purse),
+      maxPlayers: maxPlayers != null && maxPlayers !== '' ? Number(maxPlayers) : null,
+      roleCaps: roleCaps && typeof roleCaps === 'object' ? roleCaps : null,
       createdAt: new Date().toISOString()
     });
 
-    // Optionally create manager account
     if (managerEmail && managerPassword) {
       const users = getUsers();
       if (!users.find(u => u.email.toLowerCase() === managerEmail.toLowerCase())) {
@@ -65,28 +64,50 @@ router.post('/', authMiddleware, requireRole('admin'), async (req, res) => {
   }
 });
 
-// Update team (Admin only)
 router.put('/:id', authMiddleware, requireRole('admin'), (req, res) => {
-  const { name, purse, remainingPurse } = req.body;
+  const { name, purse, remainingPurse, maxPlayers, roleCaps } = req.body;
   const updates = {};
   if (name) updates.name = name;
   if (purse !== undefined) updates.purse = Number(purse);
   if (remainingPurse !== undefined) updates.remainingPurse = Number(remainingPurse);
+  if (maxPlayers !== undefined) {
+    updates.maxPlayers = maxPlayers === null || maxPlayers === '' ? null : Number(maxPlayers);
+  }
+  if (roleCaps !== undefined) {
+    updates.roleCaps = roleCaps && typeof roleCaps === 'object' ? roleCaps : null;
+  }
 
   const updated = updateTeam(req.params.id, updates);
   if (!updated) return res.status(404).json({ error: 'Team not found' });
   res.json(updated);
 });
 
-// Delete team (Admin only)
 router.delete('/:id', authMiddleware, requireRole('admin'), (req, res) => {
+  const teamId = req.params.id;
   const teams = getTeams();
-  const idx = teams.findIndex(t => t.id === req.params.id);
+  const idx = teams.findIndex(t => t.id === teamId);
   if (idx === -1) return res.status(404).json({ error: 'Team not found' });
 
+  // Block delete if team already bought players in any auction
+  const hasSold = getSoldPlayers().some(s => s.teamId === teamId);
+  if (hasSold) {
+    return res.status(400).json({
+      error: 'Cannot delete team that has bought players. End auction / clear sold records first.'
+    });
+  }
+
   teams.splice(idx, 1);
-  require('../data/store').persist();
-  res.json({ message: 'Team deleted' });
+
+  // Remove manager accounts linked to this team
+  const users = getUsers();
+  for (let i = users.length - 1; i >= 0; i--) {
+    if (users[i].teamId === teamId && users[i].role === 'team_manager') {
+      users.splice(i, 1);
+    }
+  }
+
+  persist();
+  res.json({ message: 'Team and linked managers deleted' });
 });
 
 module.exports = router;
