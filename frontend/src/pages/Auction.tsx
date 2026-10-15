@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api, { getSocketUrl } from '../services/api';
 import { io, Socket } from 'socket.io-client';
-import { getIncrement, nextMinBid, DEFAULT_BID_RULES, BidRule } from '../utils/bidRules';
+import { getIncrement, nextMinBid, maxBidForTeam, DEFAULT_BID_RULES, BidRule } from '../utils/bidRules';
 import BidRulesEditor from '../components/BidRulesEditor';
 
 interface Player {
@@ -25,6 +25,7 @@ interface Team {
   name: string;
   purse: number;
   remainingPurse: number;
+  maxPlayers?: number | null;
 }
 
 interface Auction {
@@ -61,7 +62,6 @@ export default function Auction() {
   const [message, setMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
   const [creating, setCreating] = useState(false);
   const [adminBidTeamId, setAdminBidTeamId] = useState('');
-
   const socketRef = useRef<Socket | null>(null);
 
   const loadAuction = useCallback(async () => {
@@ -73,7 +73,6 @@ export default function Auction() {
       const active = auctionRes.data;
       setAuction(active);
       setTeams(teamsRes.data);
-
       if (active?.id) {
         const [playersRes, soldRes] = await Promise.all([
           api.get(`/auctions/${active.id}/available-players`),
@@ -81,7 +80,6 @@ export default function Auction() {
         ]);
         setAvailablePlayers(playersRes.data);
         setSoldList(soldRes.data);
-
         if (active.currentPlayerId) {
           const playerRes = await api.get(`/players/${active.currentPlayerId}`);
           setCurrentPlayer(playerRes.data);
@@ -97,17 +95,13 @@ export default function Auction() {
     }
   }, []);
 
-  useEffect(() => {
-    loadAuction();
-  }, [loadAuction]);
+  useEffect(() => { loadAuction(); }, [loadAuction]);
 
   useEffect(() => {
     if (!auction?.id) return;
-
     const socket = io(getSocketUrl(), { transports: ['websocket', 'polling'] });
     socketRef.current = socket;
     socket.emit('join-auction', auction.id);
-
     socket.on('player-selected', (data: { auction: Auction; player: Player }) => {
       setAuction(data.auction);
       setCurrentPlayer(data.player);
@@ -115,13 +109,11 @@ export default function Auction() {
       setMessage({ type: 'info', text: `Now auctioning: ${data.player.name}` });
       api.get(`/auctions/${data.auction.id}/available-players`).then(r => setAvailablePlayers(r.data));
     });
-
     socket.on('new-bid', (data: { auction: Auction; bid: any; team: { id: string; name: string } }) => {
       setAuction(data.auction);
       setBidAmount(String(nextMinBid(data.auction.currentBid || 0, true, data.auction)));
       setMessage({ type: 'success', text: `${data.team.name} bid ₹${data.bid.amount.toLocaleString()}` });
     });
-
     socket.on('player-sold', (data: { auction: Auction; result: any }) => {
       setAuction(data.auction);
       setCurrentPlayer(null);
@@ -139,18 +131,15 @@ export default function Auction() {
         api.get('/teams').then(r => setTeams(r.data));
       }
     });
-
     socket.on('auction-status', (data: Auction) => {
       setAuction(data);
       setMessage({ type: 'info', text: `Auction ${data.status}` });
     });
-
     socket.on('auction-ended', (data: Auction) => {
       setAuction(data);
       setCurrentPlayer(null);
       setMessage({ type: 'info', text: 'Auction has ended' });
     });
-
     return () => {
       socket.emit('leave-auction', auction.id);
       socket.disconnect();
@@ -246,7 +235,7 @@ export default function Auction() {
       if (user?.role === 'admin') {
         const tid = adminBidTeamId || teams[0]?.id;
         if (!tid) {
-          showMsg('error', 'Select a team to bid for (admin)');
+          showMsg('error', 'Select a team to bid');
           return;
         }
         payload.teamId = tid;
@@ -277,7 +266,7 @@ export default function Auction() {
 
   const undoLastSell = async () => {
     if (!auction) return;
-    if (!confirm('Undo the last sold player? Purse will be refunded and player set back to Approved.')) return;
+    if (!confirm('Undo the last sold player?')) return;
     try {
       await api.post(`/auctions/${auction.id}/undo-last-sell`);
       showMsg('info', 'Last sale undone');
@@ -302,7 +291,7 @@ export default function Auction() {
 
   const restartAuction = async () => {
     if (!auction) return;
-    if (!confirm('Restart this auction? Sales for this auction will be undone, purses refunded, players set back to Approved.')) return;
+    if (!confirm('Restart this auction? Sales undone, purses refunded, players → Approved.')) return;
     try {
       const res = await api.post(`/auctions/${auction.id}/restart`);
       setAuction(res.data.auction);
@@ -316,7 +305,7 @@ export default function Auction() {
   };
 
   const freshAuction = async () => {
-    if (!confirm('Start a FRESH auction? Resets all team purses, clears sold records, re-approves Sold/Unsold players, creates a new draft auction.')) return;
+    if (!confirm('Fresh auction? Resets purses, clears sold, re-approves players, new draft.')) return;
     try {
       const res = await api.post('/auctions/fresh', {});
       setAuction(res.data.auction);
@@ -385,20 +374,17 @@ export default function Auction() {
         {!auction && user?.role === 'admin' && (
           <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-8 text-center border dark:border-gray-700 space-y-3">
             <h2 className="text-xl font-bold text-gray-900 dark:text-white">No Active Auction</h2>
-            <p className="text-gray-500 dark:text-gray-400">Create an auction or start completely fresh.</p>
             <div className="flex flex-wrap gap-3 justify-center">
               <button onClick={createAuction} disabled={creating} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-lg font-medium disabled:opacity-50">
                 {creating ? 'Creating...' : 'Create Auction'}
               </button>
-              <button onClick={freshAuction} className="bg-slate-700 hover:bg-slate-800 text-white px-6 py-2.5 rounded-lg font-medium">
-                ✨ Fresh new auction
-              </button>
+              <button onClick={freshAuction} className="bg-slate-700 hover:bg-slate-800 text-white px-6 py-2.5 rounded-lg font-medium">✨ Fresh new auction</button>
             </div>
           </div>
         )}
 
         {!auction && user?.role !== 'admin' && (
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-8 text-center text-gray-500 dark:text-gray-400">Waiting for admin to start the auction...</div>
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-8 text-center text-gray-500 dark:text-gray-400">Waiting for admin...</div>
         )}
 
         {auction && (
@@ -437,28 +423,62 @@ export default function Auction() {
                     </div>
 
                     {(user?.role === 'team_manager' || user?.role === 'admin') && auction.status === 'live' && (
-                      <div className="mt-6 flex flex-col sm:flex-row gap-3 items-end">
+                      <div className="mt-6 space-y-3">
                         {user?.role === 'admin' && (
-                          <div className="sm:w-40">
-                            <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Bid as team</label>
-                            <select value={adminBidTeamId} onChange={e => setAdminBidTeamId(e.target.value)}
-                              className="w-full border dark:border-gray-600 rounded-lg px-3 py-2.5 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm">
-                              <option value="">Select team</option>
-                              {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                            </select>
+                          <div>
+                            <label className="block text-xs text-gray-500 dark:text-gray-400 mb-2">Select team to bid</label>
+                            <div className="flex flex-wrap gap-2">
+                              {teams.map(tm => {
+                                const bought = soldList.filter(s => s.teamId === tm.id).length;
+                                const maxB = maxBidForTeam(tm.remainingPurse, bought, tm.maxPlayers);
+                                const selected = adminBidTeamId === tm.id;
+                                return (
+                                  <button
+                                    key={tm.id}
+                                    type="button"
+                                    onClick={() => setAdminBidTeamId(tm.id)}
+                                    className={`px-3 py-2 rounded-lg text-sm font-medium border transition ${
+                                      selected
+                                        ? 'bg-indigo-600 text-white border-indigo-600'
+                                        : 'bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 border-gray-300 dark:border-gray-600 hover:border-indigo-400'
+                                    }`}
+                                  >
+                                    {tm.name}
+                                    <span className="block text-[10px] opacity-80 font-normal">
+                                      ₹{tm.remainingPurse.toLocaleString()} · max ₹{maxB.toLocaleString()}
+                                    </span>
+                                  </button>
+                                );
+                              })}
+                            </div>
                           </div>
                         )}
-                        <div className="flex-1">
-                          <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Your Bid (₹)</label>
-                          <input type="number" value={bidAmount} onChange={e => setBidAmount(e.target.value)}
-                            className="w-full border dark:border-gray-600 rounded-lg px-4 py-2.5 text-lg font-medium focus:ring-2 focus:ring-blue-500 outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                            step={getIncrement(auction.currentBid || 0, auction)} />
+                        {user?.role === 'team_manager' && myTeam && (
+                          <p className="text-xs text-gray-500 dark:text-gray-400">
+                            Your max bid: ₹{maxBidForTeam(myTeam.remainingPurse, soldList.filter(s => s.teamId === myTeam.id).length, myTeam.maxPlayers).toLocaleString()}
+                            {' '}(₹1,000 reserved per remaining squad slot)
+                          </p>
+                        )}
+                        {user?.role === 'admin' && adminBidTeamId && (() => {
+                          const tm = teams.find(x => x.id === adminBidTeamId);
+                          if (!tm) return null;
+                          const bought = soldList.filter(s => s.teamId === tm.id).length;
+                          const maxB = maxBidForTeam(tm.remainingPurse, bought, tm.maxPlayers);
+                          return (
+                            <p className="text-xs text-indigo-600 dark:text-indigo-400">
+                              {tm.name} max: ₹{maxB.toLocaleString()} (purse ₹{tm.remainingPurse.toLocaleString()}, {tm.maxPlayers != null ? `${bought}/${tm.maxPlayers} players` : 'no squad limit'})
+                            </p>
+                          );
+                        })()}
+                        <div className="flex flex-col sm:flex-row gap-3 items-end">
+                          <div className="flex-1">
+                            <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Bid amount (₹)</label>
+                            <input type="number" value={bidAmount} onChange={e => setBidAmount(e.target.value)}
+                              className="w-full border dark:border-gray-600 rounded-lg px-4 py-2.5 text-lg font-medium focus:ring-2 focus:ring-blue-500 outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                              step={getIncrement(auction.currentBid || 0, auction)} />
+                          </div>
+                          <button onClick={placeBid} className="bg-green-600 hover:bg-green-700 text-white font-bold px-8 py-2.5 rounded-lg text-lg shadow">PLACE BID</button>
                         </div>
-                        <button type="button" onClick={() => {
-                          if (!auction) return;
-                          setBidAmount(String(nextMinBid(auction.currentBid || 0, !!auction.currentBidderTeamId, auction)));
-                        }} className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-4 py-2.5 rounded-lg text-sm shadow">+ Step</button>
-                        <button onClick={placeBid} className="bg-green-600 hover:bg-green-700 text-white font-bold px-8 py-2.5 rounded-lg text-lg shadow">PLACE BID</button>
                       </div>
                     )}
 
@@ -474,9 +494,7 @@ export default function Auction() {
                     <div className="text-4xl mb-2">🏏</div>
                     <p>No player currently being auctioned.</p>
                     {user?.role === 'admin' && auction.status === 'live' && (
-                      <button onClick={nextRandomPlayer} className="mt-4 bg-purple-600 hover:bg-purple-700 text-white px-5 py-2 rounded-lg text-sm font-medium">
-                        🎲 Pick random player
-                      </button>
+                      <button onClick={nextRandomPlayer} className="mt-4 bg-purple-600 hover:bg-purple-700 text-white px-5 py-2 rounded-lg text-sm font-medium">🎲 Pick random player</button>
                     )}
                   </div>
                 )}
@@ -548,7 +566,6 @@ export default function Auction() {
               {user?.role === 'admin' && auction.status === 'live' && (
                 <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border dark:border-gray-700 p-4">
                   <h3 className="font-semibold text-gray-900 dark:text-white mb-3">Available ({availablePlayers.length})</h3>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">Or use 🎲 Next random. Manual pick still works.</p>
                   <ul className="space-y-1 max-h-96 overflow-y-auto text-sm">
                     {availablePlayers.map(p => (
                       <li key={p.id}>
