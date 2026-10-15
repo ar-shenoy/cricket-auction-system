@@ -12,7 +12,6 @@ const { authMiddleware, requireRole } = require('../middleware/auth');
 
 const router = express.Router();
 
-/** Default ladder — organisers can override per auction */
 const DEFAULT_BID_RULES = [
   { upTo: 10000, increment: 1000 },
   { upTo: 20000, increment: 2000 },
@@ -66,9 +65,13 @@ router.get('/:id', authMiddleware, (req, res) => {
 
 router.post('/', authMiddleware, requireRole('admin'), (req, res) => {
   const { name, bidIncrement = 50000, bidTimerSeconds = 20, bidRules } = req.body;
-  const existingLive = getAuctions().find(a => a.status === 'live' || a.status === 'paused');
-  if (existingLive) {
-    return res.status(400).json({ error: 'There is already an active auction. End it first.' });
+  const existingLive = getAuctions().find(a => a.status === 'live' || a.status === 'paused' || a.status === 'draft');
+  if (existingLive && existingLive.status !== 'completed') {
+    // Allow only one non-completed auction for simplicity
+    const blocking = getAuctions().find(a => a.status === 'live' || a.status === 'paused');
+    if (blocking) {
+      return res.status(400).json({ error: 'There is already an active auction. End it first.' });
+    }
   }
   const rules = normalizeBidRules(bidRules);
   const auction = addAuction({
@@ -95,6 +98,11 @@ router.put('/:id/settings', authMiddleware, requireRole('admin'), (req, res) => 
   if (auction.status === 'completed') {
     return res.status(400).json({ error: 'Cannot edit a completed auction' });
   }
+  // Changing ladder mid-player is confusing — only when no player on the block
+  if (auction.currentPlayerId && req.body.bidRules) {
+    return res.status(400).json({ error: 'Cannot change bid rules while a player is being auctioned. Sell/unsold first or pause with no player selected.' });
+  }
+
   const updates = {};
   if (req.body.name) updates.name = req.body.name;
   if (req.body.bidTimerSeconds !== undefined) updates.bidTimerSeconds = Number(req.body.bidTimerSeconds);
@@ -105,7 +113,10 @@ router.put('/:id/settings', authMiddleware, requireRole('admin'), (req, res) => 
   if (req.body.bidIncrement !== undefined && !req.body.bidRules) {
     updates.bidIncrement = Number(req.body.bidIncrement);
   }
+
   const updated = updateAuction(auction.id, updates);
+  const io = req.app.get('io');
+  if (io) io.to(`auction-${auction.id}`).emit('auction-status', updated);
   res.json(updated);
 });
 
