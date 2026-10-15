@@ -7,6 +7,7 @@ import Teams from './pages/Teams';
 import Auction from './pages/Auction';
 import Reports from './pages/Reports';
 import LiveViewer from './pages/LiveViewer';
+import PublicResults from './pages/PublicResults';
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
@@ -25,8 +26,9 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<Login />} />
-        {/* Public viewer – no login required */}
+        {/* Public pages – no login required */}
         <Route path="/live" element={<LiveViewer />} />
+        <Route path="/results" element={<PublicResults />} />
         <Route path="/" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
         <Route path="/players" element={<PrivateRoute><Players /></PrivateRoute>} />
         <Route path="/teams" element={<PrivateRoute><Teams /></PrivateRoute>} />
