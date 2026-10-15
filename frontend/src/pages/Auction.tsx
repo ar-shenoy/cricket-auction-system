@@ -57,6 +57,7 @@ export default function Auction() {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
   const [creating, setCreating] = useState(false);
+  const [adminBidTeamId, setAdminBidTeamId] = useState('');
 
   const socketRef = useRef<Socket | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
@@ -249,7 +250,16 @@ export default function Auction() {
   const placeBid = async () => {
     if (!auction || !bidAmount) return;
     try {
-      await api.post(`/auctions/${auction.id}/bid`, { amount: Number(bidAmount) });
+      const payload: any = { amount: Number(bidAmount) };
+      if (user?.role === 'admin') {
+        const tid = adminBidTeamId || teams[0]?.id;
+        if (!tid) {
+          showMsg('error', 'Select a team to bid for (admin)');
+          return;
+        }
+        payload.teamId = tid;
+      }
+      await api.post(`/auctions/${auction.id}/bid`, payload);
     } catch (err: any) {
       showMsg('error', err.response?.data?.error || 'Bid failed');
     }
@@ -341,6 +351,7 @@ export default function Auction() {
               </span>
             )}
             <span className="text-sm text-gray-600 dark:text-gray-300">{user?.name}</span>
+            <a href="/live" target="_blank" rel="noreferrer" className="text-sm text-indigo-600 dark:text-indigo-400 hover:underline">Share live</a>
             <button onClick={logout} className="text-sm text-red-600">Logout</button>
           </div>
         </div>
@@ -411,6 +422,16 @@ export default function Auction() {
 
                     {(user?.role === 'team_manager' || user?.role === 'admin') && auction.status === 'live' && (
                       <div className="mt-6 flex flex-col sm:flex-row gap-3 items-end">
+                        {user?.role === 'admin' && (
+                          <div className="sm:w-40">
+                            <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Bid as team</label>
+                            <select value={adminBidTeamId} onChange={e => setAdminBidTeamId(e.target.value)}
+                              className="w-full border dark:border-gray-600 rounded-lg px-3 py-2.5 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm">
+                              <option value="">Select team</option>
+                              {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                            </select>
+                          </div>
+                        )}
                         <div className="flex-1">
                           <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Your Bid (₹)</label>
                           <input type="number" value={bidAmount} onChange={e => setBidAmount(e.target.value)}
