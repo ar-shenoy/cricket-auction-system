@@ -10,6 +10,7 @@ interface Team {
   purse: number;
   remainingPurse: number;
   maxPlayers?: number | null;
+  logoUrl?: string;
   createdAt: string;
 }
 
@@ -27,6 +28,7 @@ export default function Teams() {
     purse: '10000000',
     remainingPurse: '',
     maxPlayers: '',
+    logoUrl: '',
     managerName: '',
     managerEmail: '',
     managerPassword: ''
@@ -44,7 +46,7 @@ export default function Teams() {
 
   const openCreate = () => {
     setEditing(null);
-    setForm({ name: '', purse: '10000000', remainingPurse: '', maxPlayers: '15', managerName: '', managerEmail: '', managerPassword: '' });
+    setForm({ name: '', purse: '10000000', remainingPurse: '', maxPlayers: '15', logoUrl: '', managerName: '', managerEmail: '', managerPassword: '' });
     setShowModal(true);
   };
 
@@ -55,6 +57,7 @@ export default function Teams() {
       purse: String(team.purse),
       remainingPurse: String(team.remainingPurse),
       maxPlayers: team.maxPlayers != null ? String(team.maxPlayers) : '',
+      logoUrl: team.logoUrl || '',
       managerName: '', managerEmail: '', managerPassword: ''
     });
     setShowModal(true);
@@ -69,13 +72,15 @@ export default function Teams() {
           name: form.name,
           purse: Number(form.purse),
           remainingPurse: form.remainingPurse !== '' ? Number(form.remainingPurse) : undefined,
-          maxPlayers
+          maxPlayers,
+          logoUrl: form.logoUrl || ''
         });
       } else {
         await api.post('/teams', {
           name: form.name,
           purse: Number(form.purse),
           maxPlayers,
+          logoUrl: form.logoUrl || '',
           managerName: form.managerName || undefined,
           managerEmail: form.managerEmail || undefined,
           managerPassword: form.managerPassword || undefined
@@ -136,7 +141,7 @@ export default function Teams() {
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         <div className="flex justify-between items-center mb-6">
-          <p className="text-gray-500 dark:text-gray-400">Manage teams, purses, and squad size limits.</p>
+          <p className="text-gray-500 dark:text-gray-400">Manage teams, purses, logos, and squad size limits.</p>
           {user?.role === 'admin' && (
             <div className="flex gap-2">
               <button onClick={openCreate} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium">+ Create Team</button>
@@ -154,7 +159,7 @@ export default function Teams() {
             <button onClick={() => setImportResult(null)} className="ml-3 underline text-xs">Dismiss</button>
           </div>
         )}
-        <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">CSV columns: name, purse, max_players (optional), manager_name, manager_email, manager_password</p>
+        <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">CSV columns: name, purse, max_players, logo_url (optional image URL), manager_name, manager_email, manager_password</p>
 
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border dark:border-gray-700 overflow-hidden">
           {loading ? (
@@ -178,7 +183,12 @@ export default function Teams() {
               <tbody>
                 {teams.map(team => (
                   <tr key={team.id} className="border-b dark:border-gray-700 last:border-0 hover:bg-gray-50 dark:hover:bg-gray-700/30">
-                    <td className="px-4 py-3 font-medium text-gray-900 dark:text-white">{team.name}</td>
+                    <td className="px-4 py-3 font-medium text-gray-900 dark:text-white">
+                      <div className="flex items-center gap-2">
+                        {team.logoUrl ? <img src={team.logoUrl} alt="" className="w-8 h-8 rounded object-cover" /> : <span className="text-lg">🏏</span>}
+                        {team.name}
+                      </div>
+                    </td>
                     <td className="px-4 py-3 text-gray-700 dark:text-gray-300">₹{team.purse.toLocaleString()}</td>
                     <td className="px-4 py-3 text-green-600 dark:text-green-400 font-medium">₹{team.remainingPurse.toLocaleString()}</td>
                     <td className="px-4 py-3 text-gray-700 dark:text-gray-300">{team.maxPlayers ?? '—'}</td>
@@ -201,7 +211,7 @@ export default function Teams() {
 
       {showModal && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl max-w-md w-full p-6">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl max-w-md w-full p-6 max-h-[90vh] overflow-y-auto">
             <h2 className="text-xl font-bold mb-4 text-gray-900 dark:text-white">{editing ? 'Edit Team' : 'Create New Team'}</h2>
             <form onSubmit={handleSubmit} className="space-y-3">
               <div>
@@ -218,6 +228,11 @@ export default function Teams() {
                 <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">Max players (optional)</label>
                 <input type="number" min={1} value={form.maxPlayers} onChange={e => setForm({ ...form, maxPlayers: e.target.value })}
                   className="w-full border dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white" placeholder="e.g. 15" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">Logo URL (optional)</label>
+                <input type="url" value={form.logoUrl} onChange={e => setForm({ ...form, logoUrl: e.target.value })}
+                  className="w-full border dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white" placeholder="https://..." />
               </div>
               {editing && (
                 <div>
