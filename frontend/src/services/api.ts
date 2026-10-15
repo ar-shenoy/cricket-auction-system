@@ -1,8 +1,5 @@
 import axios from 'axios';
 
-// In production (Vercel) set VITE_API_URL to your Render backend, e.g.
-// https://cricket-auction-system-nejk.onrender.com/api
-// In local dev, leave unset to use Vite proxy (/api -> localhost:5000)
 const baseURL = import.meta.env.VITE_API_URL || '/api';
 
 const api = axios.create({
@@ -12,7 +9,6 @@ const api = axios.create({
   },
 });
 
-// Attach token to every request
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('token');
   if (token) {
@@ -21,21 +17,31 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Handle 401 globally
 api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      localStorage.removeItem('token');
-      window.location.href = '/login';
+      // Don't force login redirect on public pages
+      const path = typeof window !== 'undefined' ? window.location.pathname : '';
+      if (path !== '/live' && !path.startsWith('/live')) {
+        localStorage.removeItem('token');
+        window.location.href = '/login';
+      }
     }
     return Promise.reject(error);
   }
 );
 
+/** Unauthenticated client for public viewer */
+export const publicApi = axios.create({
+  baseURL,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+});
+
 export default api;
 
-/** Socket.IO server URL (no /api path) */
 export function getSocketUrl(): string {
   if (import.meta.env.VITE_SOCKET_URL) {
     return import.meta.env.VITE_SOCKET_URL;
