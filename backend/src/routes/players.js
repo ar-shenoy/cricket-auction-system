@@ -9,7 +9,6 @@ const { authMiddleware, requireRole } = require('../middleware/auth');
 
 const router = express.Router();
 
-// Multer setup for CSV upload (memory or disk)
 const upload = multer({
   dest: path.join(__dirname, '../uploads/'),
   fileFilter: (req, file, cb) => {
@@ -19,26 +18,20 @@ const upload = multer({
       cb(new Error('Only CSV files are allowed'));
     }
   },
-  limits: { fileSize: 5 * 1024 * 1024 } // 5MB
+  limits: { fileSize: 5 * 1024 * 1024 }
 });
 
-// Ensure uploads folder exists
 const uploadsDir = path.join(__dirname, '../uploads');
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
-// ==================== GET ALL PLAYERS ====================
 router.get('/', authMiddleware, (req, res) => {
   const { status, role, search } = req.query;
   let players = getPlayers();
 
-  if (status) {
-    players = players.filter(p => p.status === status);
-  }
-  if (role) {
-    players = players.filter(p => p.role === role);
-  }
+  if (status) players = players.filter(p => p.status === status);
+  if (role) players = players.filter(p => p.role === role);
   if (search) {
     const q = search.toLowerCase();
     players = players.filter(p =>
@@ -48,7 +41,6 @@ router.get('/', authMiddleware, (req, res) => {
     );
   }
 
-  // Sort: Pending first, then by name
   players.sort((a, b) => {
     if (a.status === 'Pending' && b.status !== 'Pending') return -1;
     if (a.status !== 'Pending' && b.status === 'Pending') return 1;
@@ -58,7 +50,23 @@ router.get('/', authMiddleware, (req, res) => {
   res.json(players);
 });
 
-// ==================== GET SINGLE PLAYER ====================
+// Public single player (for live viewer) — before /:id
+router.get('/public/:id', (req, res) => {
+  const players = getPlayers();
+  const player = players.find(p => p.id === req.params.id);
+  if (!player) return res.status(404).json({ error: 'Player not found' });
+  res.json({
+    id: player.id,
+    name: player.name,
+    role: player.role,
+    basePrice: player.basePrice,
+    city: player.city,
+    bio: player.bio,
+    photoUrl: player.photoUrl,
+    status: player.status
+  });
+});
+
 router.get('/:id', authMiddleware, (req, res) => {
   const players = getPlayers();
   const player = players.find(p => p.id === req.params.id);
@@ -66,17 +74,15 @@ router.get('/:id', authMiddleware, (req, res) => {
   res.json(player);
 });
 
-// ==================== CREATE SINGLE PLAYER (Admin) ====================
 router.post('/', authMiddleware, requireRole('admin'), (req, res) => {
   try {
-    const { name, mobile, email, role, battingStyle, bowlingStyle, age, city, bio, basePrice } = req.body;
+    const { name, mobile, email, role, battingStyle, bowlingStyle, age, city, bio, basePrice, photoUrl } = req.body;
 
     if (!name || !role) {
       return res.status(400).json({ error: 'Name and Role are required' });
     }
 
     const players = getPlayers();
-    // Prevent exact duplicate by mobile if provided
     if (mobile && players.find(p => p.mobile === mobile)) {
       return res.status(400).json({ error: 'Player with this mobile number already exists' });
     }
@@ -93,8 +99,8 @@ router.post('/', authMiddleware, requireRole('admin'), (req, res) => {
       city: city || '',
       bio: bio || '',
       basePrice: basePrice ? Number(basePrice) : 0,
-      status: 'Pending', // Pending → Approved → Sold / Unsold
-      photoUrl: '',
+      status: 'Pending',
+      photoUrl: photoUrl || '',
       createdAt: new Date().toISOString()
     });
 
@@ -105,59 +111,48 @@ router.post('/', authMiddleware, requireRole('admin'), (req, res) => {
   }
 });
 
-// ==================== UPDATE PLAYER ====================
 router.put('/:id', authMiddleware, requireRole('admin'), (req, res) => {
   const allowed = ['name', 'mobile', 'email', 'role', 'battingStyle', 'bowlingStyle', 'age', 'city', 'bio', 'basePrice', 'status', 'photoUrl'];
   const updates = {};
   allowed.forEach(key => {
-    if (req.body[key] !== undefined) {
-      updates[key] = req.body[key];
-    }
+    if (req.body[key] !== undefined) updates[key] = req.body[key];
   });
 
   if (updates.age) updates.age = Number(updates.age);
-  if (updates.basePrice) updates.basePrice = Number(updates.basePrice);
+  if (updates.basePrice !== undefined) updates.basePrice = Number(updates.basePrice);
 
   const updated = updatePlayer(req.params.id, updates);
   if (!updated) return res.status(404).json({ error: 'Player not found' });
   res.json(updated);
 });
 
-// ==================== APPROVE / REJECT PLAYER ====================
 router.patch('/:id/status', authMiddleware, requireRole('admin'), (req, res) => {
   const { status } = req.body;
   if (!['Pending', 'Approved', 'Rejected'].includes(status)) {
     return res.status(400).json({ error: 'Invalid status. Use Pending, Approved or Rejected' });
   }
-
   const updated = updatePlayer(req.params.id, { status });
   if (!updated) return res.status(404).json({ error: 'Player not found' });
   res.json(updated);
 });
 
-// ==================== BULK APPROVE ====================
 router.post('/bulk-approve', authMiddleware, requireRole('admin'), (req, res) => {
   const { ids } = req.body;
   if (!Array.isArray(ids) || ids.length === 0) {
     return res.status(400).json({ error: 'ids array is required' });
   }
-
   let count = 0;
   ids.forEach(id => {
-    const updated = updatePlayer(id, { status: 'Approved' });
-    if (updated) count++;
+    if (updatePlayer(id, { status: 'Approved' })) count++;
   });
-
   res.json({ message: `${count} players approved`, count });
 });
 
-// ==================== CSV IMPORT (Hybrid) ====================
 router.post('/import', authMiddleware, requireRole('admin'), upload.single('file'), (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'CSV file is required' });
   }
 
-  const results = [];
   const errors = [];
   let imported = 0;
   let skipped = 0;
@@ -168,7 +163,6 @@ router.post('/import', authMiddleware, requireRole('admin'), upload.single('file
     }))
     .on('data', (row) => {
       try {
-        // Flexible column mapping (supports common Google Form headers)
         const name = row.name || row.full_name || row.player_name || row['full name'] || '';
         const mobile = row.mobile || row.mobile_number || row.phone || row['mobile number'] || '';
         const email = row.email || row.email_address || '';
@@ -179,6 +173,7 @@ router.post('/import', authMiddleware, requireRole('admin'), upload.single('file
         const city = row.city || row.location || row.state || '';
         const bio = row.bio || row.experience || row['experience / bio'] || row.comments || '';
         const basePrice = row.base_price || row.baseprice || row['base price'] || 0;
+        const photoUrl = row.photo || row.photo_url || row['photo url'] || '';
 
         if (!name || name.trim().length < 2) {
           errors.push({ row, reason: 'Missing or invalid name' });
@@ -186,7 +181,6 @@ router.post('/import', authMiddleware, requireRole('admin'), upload.single('file
           return;
         }
 
-        // Normalize role
         let normalizedRole = 'All-rounder';
         const r = role.toLowerCase();
         if (r.includes('bat')) normalizedRole = 'Batsman';
@@ -195,7 +189,6 @@ router.post('/import', authMiddleware, requireRole('admin'), upload.single('file
         else if (r.includes('all')) normalizedRole = 'All-rounder';
 
         const players = getPlayers();
-        // Skip if exact mobile already exists
         if (mobile && players.find(p => p.mobile === String(mobile).trim())) {
           skipped++;
           errors.push({ name, reason: 'Duplicate mobile number' });
@@ -215,7 +208,7 @@ router.post('/import', authMiddleware, requireRole('admin'), upload.single('file
           bio: String(bio).trim(),
           basePrice: Number(basePrice) || 0,
           status: 'Pending',
-          photoUrl: '',
+          photoUrl: String(photoUrl).trim(),
           createdAt: new Date().toISOString(),
           importedFrom: 'csv'
         });
@@ -227,15 +220,8 @@ router.post('/import', authMiddleware, requireRole('admin'), upload.single('file
       }
     })
     .on('end', () => {
-      // Clean up uploaded file
       fs.unlink(req.file.path, () => {});
-
-      res.json({
-        message: `Import completed`,
-        imported,
-        skipped,
-        errors: errors.slice(0, 20) // limit error details
-      });
+      res.json({ message: 'Import completed', imported, skipped, errors: errors.slice(0, 20) });
     })
     .on('error', (err) => {
       fs.unlink(req.file.path, () => {});
@@ -243,21 +229,18 @@ router.post('/import', authMiddleware, requireRole('admin'), upload.single('file
     });
 });
 
-// ==================== DELETE PLAYER ====================
 router.delete('/:id', authMiddleware, requireRole('admin'), (req, res) => {
   const data = getData();
   const idx = data.players.findIndex(p => p.id === req.params.id);
   if (idx === -1) return res.status(404).json({ error: 'Player not found' });
-
   data.players.splice(idx, 1);
   persist();
   res.json({ message: 'Player deleted' });
 });
 
-// ==================== STATS ====================
 router.get('/stats/summary', authMiddleware, (req, res) => {
   const players = getPlayers();
-  const summary = {
+  res.json({
     total: players.length,
     pending: players.filter(p => p.status === 'Pending').length,
     approved: players.filter(p => p.status === 'Approved').length,
@@ -270,8 +253,7 @@ router.get('/stats/summary', authMiddleware, (req, res) => {
       'All-rounder': players.filter(p => p.role === 'All-rounder').length,
       'Wicket-keeper': players.filter(p => p.role === 'Wicket-keeper').length
     }
-  };
-  res.json(summary);
+  });
 });
 
 module.exports = router;
