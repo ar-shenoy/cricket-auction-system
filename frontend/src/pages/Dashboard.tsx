@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { Link } from 'react-router-dom';
-import api from '../services/api';
+import api, { getSocketUrl } from '../services/api';
 import ThemeToggle from '../components/ThemeToggle';
 
 interface Team {
@@ -9,16 +9,36 @@ interface Team {
   name: string;
   purse: number;
   remainingPurse: number;
+  logoUrl?: string;
+}
+
+interface AuctionRow {
+  id: string;
+  name: string;
+  status: string;
+  createdAt?: string;
+  completedAt?: string;
 }
 
 export default function Dashboard() {
   const { user, logout } = useAuth();
   const [teams, setTeams] = useState<Team[]>([]);
+  const [auctions, setAuctions] = useState<AuctionRow[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api.get('/teams')
-      .then(res => setTeams(res.data))
+    try { fetch(`${getSocketUrl()}/api/health`); } catch {}
+    Promise.all([
+      api.get('/teams'),
+      api.get('/auctions').catch(() => ({ data: [] }))
+    ])
+      .then(([teamsRes, auctionsRes]) => {
+        setTeams(teamsRes.data);
+        const list = Array.isArray(auctionsRes.data) ? auctionsRes.data : [];
+        setAuctions(list.sort((a: AuctionRow, b: AuctionRow) =>
+          new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+        ));
+      })
       .catch(console.error)
       .finally(() => setLoading(false));
   }, []);
@@ -32,7 +52,8 @@ export default function Dashboard() {
             <h1 className="text-xl font-bold text-gray-900 dark:text-white">Cricket Auction</h1>
           </div>
           <div className="flex items-center gap-3">
-            <Link to="/live" className="text-sm text-indigo-600 dark:text-indigo-400 hover:underline">Public Live View</Link>
+            <Link to="/live" className="text-sm text-indigo-600 dark:text-indigo-400 hover:underline">Public Live</Link>
+            <Link to="/results" className="text-sm text-green-600 dark:text-green-400 hover:underline">Results</Link>
             <ThemeToggle />
             <span className="text-sm text-gray-600 dark:text-gray-300">
               {user?.name} <span className="text-xs bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 px-2 py-0.5 rounded-full ml-1">{user?.role}</span>
@@ -89,8 +110,13 @@ export default function Dashboard() {
                 <tbody>
                   {teams.map(team => (
                     <tr key={team.id} className="border-b dark:border-gray-700 last:border-0">
-                      <td className="py-3 font-medium text-gray-900 dark:text-white">{team.name}</td>
-                      <td className="py-3">₹{team.purse.toLocaleString()}</td>
+                      <td className="py-3 font-medium text-gray-900 dark:text-white">
+                        <div className="flex items-center gap-2">
+                          {team.logoUrl ? <img src={team.logoUrl} alt="" className="w-7 h-7 rounded object-cover" /> : null}
+                          {team.name}
+                        </div>
+                      </td>
+                      <td className="py-3 text-gray-700 dark:text-gray-300">₹{team.purse.toLocaleString()}</td>
                       <td className="py-3 text-green-600 font-medium">₹{team.remainingPurse.toLocaleString()}</td>
                       <td className="py-3 text-red-500">₹{(team.purse - team.remainingPurse).toLocaleString()}</td>
                     </tr>
@@ -100,6 +126,33 @@ export default function Dashboard() {
             </div>
           )}
         </div>
+
+        <section className="mt-8 bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+            <h2 className="font-semibold text-gray-900 dark:text-white">Auction history</h2>
+            <div className="flex gap-3 text-sm">
+              <a href="/live" target="_blank" rel="noreferrer" className="text-indigo-600 dark:text-indigo-400 hover:underline">Open live</a>
+              <a href="/results" target="_blank" rel="noreferrer" className="text-green-600 dark:text-green-400 hover:underline">Public results</a>
+            </div>
+          </div>
+          {auctions.length === 0 ? (
+            <p className="text-sm text-gray-500 dark:text-gray-400">No auctions yet.</p>
+          ) : (
+            <ul className="space-y-2 text-sm">
+              {auctions.map(a => (
+                <li key={a.id} className="flex flex-wrap justify-between gap-2 border-b dark:border-gray-700 pb-2 last:border-0">
+                  <span className="text-gray-900 dark:text-white font-medium">{a.name}</span>
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${
+                    a.status === 'live' ? 'bg-green-100 text-green-700' :
+                    a.status === 'completed' ? 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300' :
+                    a.status === 'paused' ? 'bg-yellow-100 text-yellow-700' :
+                    'bg-blue-100 text-blue-700'
+                  }`}>{a.status}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
       </main>
     </div>
   );
