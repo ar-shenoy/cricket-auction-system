@@ -12,6 +12,9 @@ interface Player {
   city?: string;
   bio?: string;
   photoUrl?: string;
+  battingStyle?: string;
+  bowlingStyle?: string;
+  age?: number | null;
 }
 
 interface Team {
@@ -27,8 +30,6 @@ interface Auction {
   currentPlayerId: string | null;
   currentBid: number;
   currentBidderTeamId: string | null;
-  bidTimerSeconds: number;
-  timerEndsAt: string | null;
 }
 
 export default function LiveViewer() {
@@ -36,11 +37,9 @@ export default function LiveViewer() {
   const [currentPlayer, setCurrentPlayer] = useState<Player | null>(null);
   const [teams, setTeams] = useState<Team[]>([]);
   const [soldList, setSoldList] = useState<any[]>([]);
-  const [timeLeft, setTimeLeft] = useState(0);
   const [message, setMessage] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const socketRef = useRef<Socket | null>(null);
-  const timerRef = useRef<any>(null);
 
   const shareUrl = typeof window !== 'undefined' ? `${window.location.origin}/live` : '/live';
 
@@ -71,7 +70,7 @@ export default function LiveViewer() {
               const pRes = await publicApi.get(`/players/public/${aRes.data.currentPlayerId}`);
               setCurrentPlayer(pRes.data);
             } catch {
-              // player public route may not exist yet — ignore
+              /* ignore */
             }
           }
         }
@@ -124,21 +123,6 @@ export default function LiveViewer() {
     };
   }, [auction?.id]);
 
-  useEffect(() => {
-    if (timerRef.current) clearInterval(timerRef.current);
-    if (auction?.status === 'live' && auction.timerEndsAt && currentPlayer) {
-      const tick = () => {
-        const left = Math.max(0, Math.floor((new Date(auction.timerEndsAt!).getTime() - Date.now()) / 1000));
-        setTimeLeft(left);
-      };
-      tick();
-      timerRef.current = setInterval(tick, 250);
-    } else setTimeLeft(0);
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
-  }, [auction?.timerEndsAt, auction?.status, currentPlayer]);
-
   const currentBidder = teams.find(t => t.id === auction?.currentBidderTeamId)?.name || '—';
 
   return (
@@ -185,36 +169,32 @@ export default function LiveViewer() {
               <div className="bg-white dark:bg-gray-800 rounded-xl shadow border dark:border-gray-700 overflow-hidden">
                 {currentPlayer ? (
                   <div className="p-6">
-                    <div className="flex flex-col sm:flex-row justify-between gap-4">
-                      <div className="flex gap-4 items-start">
-                        {currentPlayer.photoUrl ? (
-                          <img src={currentPlayer.photoUrl} alt="" className="w-20 h-20 rounded-full object-cover border-2 border-blue-500" />
-                        ) : (
-                          <div className="w-20 h-20 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-3xl">🧔‍♂️</div>
-                        )}
-                        <div>
-                          <div className="text-sm text-gray-500 dark:text-gray-400">Now Auctioning</div>
-                          <h2 className="text-3xl font-bold text-gray-900 dark:text-white">{currentPlayer.name}</h2>
-                          <div className="flex flex-wrap gap-2 mt-2">
-                            <span className="bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 text-xs px-2 py-1 rounded-full">{currentPlayer.role}</span>
-                            {currentPlayer.city && (
-                              <span className="bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 text-xs px-2 py-1 rounded-full">{currentPlayer.city}</span>
-                            )}
-                            <span className="bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 text-xs px-2 py-1 rounded-full">
-                              Base ₹{(currentPlayer.basePrice || 0).toLocaleString()}
-                            </span>
+                    <div className="flex gap-4 items-start">
+                      {currentPlayer.photoUrl ? (
+                        <img src={currentPlayer.photoUrl} alt="" className="w-20 h-20 rounded-full object-cover border-2 border-blue-500" />
+                      ) : (
+                        <div className="w-20 h-20 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-3xl">🧔‍♂️</div>
+                      )}
+                      <div>
+                        <div className="text-sm text-gray-500 dark:text-gray-400">Now Auctioning</div>
+                        <h2 className="text-3xl font-bold text-gray-900 dark:text-white">{currentPlayer.name}</h2>
+                        <div className="flex flex-wrap gap-2 mt-2">
+                          <span className="bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 text-xs px-2 py-1 rounded-full">{currentPlayer.role}</span>
+                          {currentPlayer.city && (
+                            <span className="bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 text-xs px-2 py-1 rounded-full">{currentPlayer.city}</span>
+                          )}
+                          <span className="bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 text-xs px-2 py-1 rounded-full">
+                            Base ₹{(currentPlayer.basePrice || 0).toLocaleString()}
+                          </span>
+                        </div>
+                        {(currentPlayer.age != null || currentPlayer.battingStyle || currentPlayer.bowlingStyle) && (
+                          <div className="mt-2 flex flex-wrap gap-3 text-xs text-gray-600 dark:text-gray-300">
+                            {currentPlayer.age != null && <span>Age: <strong>{currentPlayer.age}</strong></span>}
+                            {currentPlayer.battingStyle && <span>Bat: <strong>{currentPlayer.battingStyle}</strong></span>}
+                            {currentPlayer.bowlingStyle && <span>Bowl: <strong>{currentPlayer.bowlingStyle}</strong></span>}
                           </div>
-                        </div>
-                      </div>
-                      <div className={`text-center px-5 py-3 rounded-xl ${
-                        timeLeft <= 5 ? 'bg-red-100 dark:bg-red-900/40' : 'bg-green-50 dark:bg-green-900/30'
-                      }`}>
-                        <div className="text-xs uppercase text-gray-500 dark:text-gray-400">Time Left</div>
-                        <div className={`text-4xl font-bold tabular-nums ${
-                          timeLeft <= 5 ? 'text-red-600' : 'text-green-700 dark:text-green-400'
-                        }`}>
-                          {Math.floor(timeLeft / 60)}:{String(timeLeft % 60).padStart(2, '0')}
-                        </div>
+                        )}
+                        {currentPlayer.bio && <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">{currentPlayer.bio}</p>}
                       </div>
                     </div>
 
