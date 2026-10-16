@@ -128,7 +128,6 @@ router.put('/:id', authMiddleware, requireRole('admin'), (req, res) => {
   res.json(updated);
 });
 
-// Allow full status set including Sold / Unsold (post-auction corrections)
 router.patch('/:id/status', authMiddleware, requireRole('admin'), (req, res) => {
   const { status } = req.body;
   const allowed = ['Pending', 'Approved', 'Rejected', 'Sold', 'Unsold'];
@@ -139,7 +138,6 @@ router.patch('/:id/status', authMiddleware, requireRole('admin'), (req, res) => 
   const player = getPlayers().find(p => p.id === req.params.id);
   if (!player) return res.status(404).json({ error: 'Player not found' });
 
-  // If changing away from Sold, try to clean sold record + refund once
   if (player.status === 'Sold' && status !== 'Sold') {
     const data = getData();
     const soldIdx = data.soldPlayers.findIndex(s => s.playerId === player.id);
@@ -168,6 +166,32 @@ router.post('/bulk-approve', authMiddleware, requireRole('admin'), (req, res) =>
     if (updatePlayer(id, { status: 'Approved' })) count++;
   });
   res.json({ message: `${count} players approved`, count });
+});
+
+router.post('/bulk-delete', authMiddleware, requireRole('admin'), (req, res) => {
+  const { ids } = req.body;
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({ error: 'ids array is required' });
+  }
+  const data = getData();
+  let count = 0;
+  ids.forEach(id => {
+    const idx = data.players.findIndex(p => p.id === id);
+    if (idx === -1) return;
+    const soldIdx = data.soldPlayers.findIndex(s => s.playerId === id);
+    if (soldIdx !== -1) {
+      const sold = data.soldPlayers[soldIdx];
+      const team = getTeams().find(t => t.id === sold.teamId);
+      if (team) {
+        updateTeam(team.id, { remainingPurse: team.remainingPurse + sold.soldPrice });
+      }
+      data.soldPlayers.splice(soldIdx, 1);
+    }
+    data.players.splice(idx, 1);
+    count++;
+  });
+  persist();
+  res.json({ message: `${count} players deleted`, count });
 });
 
 router.post('/import', authMiddleware, requireRole('admin'), upload.single('file'), (req, res) => {
@@ -256,7 +280,6 @@ router.delete('/:id', authMiddleware, requireRole('admin'), (req, res) => {
   const idx = data.players.findIndex(p => p.id === req.params.id);
   if (idx === -1) return res.status(404).json({ error: 'Player not found' });
 
-  // If sold, refund and remove sold record
   const soldIdx = data.soldPlayers.findIndex(s => s.playerId === req.params.id);
   if (soldIdx !== -1) {
     const sold = data.soldPlayers[soldIdx];
