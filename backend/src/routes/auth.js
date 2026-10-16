@@ -1,12 +1,11 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const { getUsers, addUser, getData, persist } = require('../data/store');
+const { getUsers, addUser, getAllUsers, getOrgById, persist } = require('../data/store');
 const { JWT_SECRET } = require('../middleware/auth');
 
 const router = express.Router();
 
-// Login
 router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -14,9 +13,8 @@ router.post('/login', async (req, res) => {
       return res.status(400).json({ error: 'Email and password required' });
     }
 
-    const users = getUsers();
+    const users = getAllUsers();
     const user = users.find(u => u.email.toLowerCase() === email.toLowerCase());
-
     if (!user) {
       return res.status(401).json({ error: 'Invalid email or password' });
     }
@@ -27,7 +25,6 @@ router.post('/login', async (req, res) => {
     if (isHashed) {
       isMatch = await bcrypt.compare(password, user.password);
     } else {
-      // First-run plain password (e.g. default admin123)
       isMatch = password === user.password;
       if (isMatch) {
         user.password = await bcrypt.hash(password, 10);
@@ -40,7 +37,14 @@ router.post('/login', async (req, res) => {
     }
 
     const token = jwt.sign(
-      { id: user.id, email: user.email, role: user.role, teamId: user.teamId, name: user.name },
+      {
+        id: user.id,
+        email: user.email,
+        role: user.role,
+        teamId: user.teamId,
+        name: user.name,
+        orgId: user.orgId || 'org-default'
+      },
       JWT_SECRET,
       { expiresIn: '7d' }
     );
@@ -52,7 +56,8 @@ router.post('/login', async (req, res) => {
         name: user.name,
         email: user.email,
         role: user.role,
-        teamId: user.teamId
+        teamId: user.teamId,
+        orgId: user.orgId || 'org-default'
       }
     });
   } catch (err) {
@@ -64,12 +69,11 @@ router.post('/login', async (req, res) => {
 router.post('/register', async (req, res) => {
   try {
     const { name, email, password, role = 'team_manager', teamId = null } = req.body;
-
     if (!name || !email || !password) {
       return res.status(400).json({ error: 'Name, email and password required' });
     }
 
-    const users = getUsers();
+    const users = getAllUsers();
     if (users.find(u => u.email.toLowerCase() === email.toLowerCase())) {
       return res.status(400).json({ error: 'Email already registered' });
     }
@@ -81,7 +85,8 @@ router.post('/register', async (req, res) => {
       email: email.toLowerCase(),
       password: hashed,
       role: role === 'admin' ? 'team_manager' : role,
-      teamId
+      teamId,
+      orgId: 'org-default'
     };
 
     addUser(newUser);
@@ -93,7 +98,8 @@ router.post('/register', async (req, res) => {
         name: newUser.name,
         email: newUser.email,
         role: newUser.role,
-        teamId: newUser.teamId
+        teamId: newUser.teamId,
+        orgId: newUser.orgId
       }
     });
   } catch (err) {
@@ -102,14 +108,13 @@ router.post('/register', async (req, res) => {
   }
 });
 
-// Change password (authenticated)
 router.post('/change-password', require('../middleware/auth').authMiddleware, async (req, res) => {
   try {
     const { currentPassword, newPassword } = req.body;
     if (!currentPassword || !newPassword || newPassword.length < 6) {
       return res.status(400).json({ error: 'Current password and new password (min 6 chars) required' });
     }
-    const users = getUsers();
+    const users = getAllUsers();
     const user = users.find(u => u.id === req.user.id);
     if (!user) return res.status(404).json({ error: 'User not found' });
 
@@ -129,16 +134,21 @@ router.post('/change-password', require('../middleware/auth').authMiddleware, as
 });
 
 router.get('/me', require('../middleware/auth').authMiddleware, (req, res) => {
-  const users = getUsers();
+  const users = getAllUsers();
   const user = users.find(u => u.id === req.user.id);
   if (!user) return res.status(404).json({ error: 'User not found' });
+  const org = getOrgById(user.orgId);
 
   res.json({
     id: user.id,
     name: user.name,
     email: user.email,
     role: user.role,
-    teamId: user.teamId
+    teamId: user.teamId,
+    orgId: user.orgId || 'org-default',
+    organization: org
+      ? { id: org.id, name: org.name, slug: org.slug, plan: org.plan || 'free' }
+      : null
   });
 });
 
