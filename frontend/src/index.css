@@ -2,39 +2,115 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --glass-bg: rgba(255, 255, 255, 0.72);
+  --glass-bg-strong: rgba(255, 255, 255, 0.88);
+  --glass-border: rgba(0, 0, 0, 0.08);
+  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.06);
+  --page-bg: #f5f5f7;
+  --text-primary: #1d1d1f;
+  --text-secondary: #6e6e73;
+  --accent: #0071e3;
+  --accent-hover: #0077ed;
+}
+
+html.dark {
+  --glass-bg: rgba(28, 28, 30, 0.72);
+  --glass-bg-strong: rgba(28, 28, 30, 0.88);
+  --glass-border: rgba(255, 255, 255, 0.12);
+  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  --page-bg: #000000;
+  --text-primary: #f5f5f7;
+  --text-secondary: #a1a1a6;
+  --accent: #0a84ff;
+  --accent-hover: #409cff;
+}
+
 body {
   margin: 0;
   min-height: 100vh;
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--page-bg);
+  color: var(--text-primary);
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-html.dark body {
-  background: #020617;
-  color: #f8fafc;
+.glass {
+  background: var(--glass-bg);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
 }
 
-html:not(.dark) body {
-  background: #f8fafc;
-  color: #0f172a;
+.glass-strong {
+  background: var(--glass-bg-strong);
+  backdrop-filter: saturate(180%) blur(24px);
+  -webkit-backdrop-filter: saturate(180%) blur(24px);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
 }
 
-.as-card {
-  @apply bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-2xl;
+.glass-nav {
+  background: rgba(255, 255, 255, 0.65);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  border-bottom: 1px solid var(--glass-border);
 }
 
-.as-btn-primary {
-  @apply px-4 py-2.5 rounded-xl font-medium bg-indigo-600 hover:bg-indigo-500 text-white transition;
+html.dark .glass-nav {
+  background: rgba(22, 22, 24, 0.72);
 }
 
-.as-btn-ghost {
-  @apply px-4 py-2.5 rounded-xl font-medium border border-gray-300 dark:border-slate-700 text-gray-800 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-900 transition;
+.page-mesh {
+  background:
+    radial-gradient(ellipse 80% 50% at 20% -10%, rgba(0, 113, 227, 0.12), transparent),
+    radial-gradient(ellipse 60% 40% at 90% 10%, rgba(191, 90, 242, 0.08), transparent),
+    var(--page-bg);
+}
+
+html.dark .page-mesh {
+  background:
+    radial-gradient(ellipse 80% 50% at 20% -10%, rgba(10, 132, 255, 0.15), transparent),
+    radial-gradient(ellipse 60% 40% at 90% 10%, rgba(191, 90, 242, 0.1), transparent),
+    #000000;
 }
 
 .as-input {
-  @apply w-full px-4 py-2.5 rounded-xl bg-white dark:bg-slate-950 border border-gray-300 dark:border-slate-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-slate-500 outline-none focus:ring-2 focus:ring-indigo-500;
+  @apply w-full px-4 py-2.5 rounded-2xl outline-none transition;
+  background: rgba(118, 118, 128, 0.12);
+  border: 1px solid transparent;
+  color: var(--text-primary);
+}
+
+.as-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.25);
+}
+
+html.dark .as-input {
+  background: rgba(118, 118, 128, 0.24);
+}
+
+.as-btn-primary {
+  @apply px-5 py-2.5 rounded-full font-medium text-white transition active:scale-[0.98];
+  background: var(--accent);
+}
+.as-btn-primary:hover {
+  background: var(--accent-hover);
+}
+
+.as-btn-ghost {
+  @apply px-5 py-2.5 rounded-full font-medium transition active:scale-[0.98];
+  background: rgba(118, 118, 128, 0.12);
+  color: var(--text-primary);
+}
+.as-btn-ghost:hover {
+  background: rgba(118, 118, 128, 0.2);
 }
 
 .as-label {
-  @apply block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5;
+  @apply block text-sm font-medium mb-1.5;
+  color: var(--text-secondary);
 }

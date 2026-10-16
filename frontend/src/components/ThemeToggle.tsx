@@ -7,11 +7,13 @@ export default function ThemeToggle() {
     <button
       type="button"
       onClick={toggleTheme}
-      className="text-xs sm:text-sm px-2.5 py-1.5 rounded-lg border border-gray-200 dark:border-slate-700 text-gray-600 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-800 transition"
-      title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+      className="text-xs sm:text-sm px-3 py-1.5 rounded-full font-medium transition
+        text-[var(--text-secondary)] hover:text-[var(--text-primary)]
+        bg-black/5 dark:bg-white/10 hover:bg-black/10 dark:hover:bg-white/15"
+      title={theme === 'dark' ? 'Light mode' : 'Dark mode'}
       aria-label="Toggle theme"
     >
-      {theme === 'dark' ? '☀️ Light' : '🌙 Dark'}
+      {theme === 'dark' ? '☀️' : '🌙'}
     </button>
   );
 }
