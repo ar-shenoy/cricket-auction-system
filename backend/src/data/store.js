@@ -4,14 +4,13 @@ const { v4: uuidv4 } = require('uuid');
 
 const DATA_FILE = path.join(__dirname, 'db.json');
 
-// Default data
 const defaultData = {
   users: [
     {
       id: 'admin-001',
       name: 'Super Admin',
       email: 'admin@auction.com',
-      password: 'admin123', // Will be hashed on first successful login
+      password: 'admin123',
       role: 'admin',
       teamId: null
     }
@@ -20,14 +19,17 @@ const defaultData = {
   players: [],
   auctions: [],
   bids: [],
-  soldPlayers: []
+  soldPlayers: [],
+  matches: []
 };
 
 function loadData() {
   try {
     if (fs.existsSync(DATA_FILE)) {
       const raw = fs.readFileSync(DATA_FILE, 'utf8');
-      return JSON.parse(raw);
+      const data = JSON.parse(raw);
+      if (!Array.isArray(data.matches)) data.matches = [];
+      return data;
     }
   } catch (err) {
     console.error('Error loading data:', err.message);
@@ -45,7 +47,6 @@ function saveData(data) {
 
 let db = loadData();
 
-// Helper to always persist
 function persist() {
   saveData(db);
 }
@@ -57,14 +58,16 @@ module.exports = {
     persist();
   },
   persist,
-  // Convenience getters
   getUsers: () => db.users,
   getTeams: () => db.teams,
   getPlayers: () => db.players,
   getAuctions: () => db.auctions,
   getBids: () => db.bids,
   getSoldPlayers: () => db.soldPlayers,
-  // Add helpers
+  getMatches: () => {
+    if (!Array.isArray(db.matches)) db.matches = [];
+    return db.matches;
+  },
   addUser: (user) => {
     user.id = user.id || uuidv4();
     db.users.push(user);
@@ -121,5 +124,20 @@ module.exports = {
     db.soldPlayers.push(sold);
     persist();
     return sold;
+  },
+  addMatch: (match) => {
+    if (!Array.isArray(db.matches)) db.matches = [];
+    match.id = match.id || uuidv4();
+    db.matches.push(match);
+    persist();
+    return match;
+  },
+  updateMatch: (id, updates) => {
+    if (!Array.isArray(db.matches)) db.matches = [];
+    const idx = db.matches.findIndex(m => m.id === id);
+    if (idx === -1) return null;
+    db.matches[idx] = { ...db.matches[idx], ...updates };
+    persist();
+    return db.matches[idx];
   }
 };
