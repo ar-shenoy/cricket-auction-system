@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { Link } from 'react-router-dom';
 import api, { getSocketUrl } from '../services/api';
-import ThemeToggle from '../components/ThemeToggle';
+import AppShell from '../components/AppShell';
 
 interface Team {
   id: string;
@@ -21,146 +21,116 @@ interface AuctionRow {
 }
 
 export default function Dashboard() {
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const [teams, setTeams] = useState<Team[]>([]);
   const [auctions, setAuctions] = useState<AuctionRow[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     try { fetch(`${getSocketUrl()}/api/health`); } catch {}
-    Promise.all([
-      api.get('/teams'),
-      api.get('/auctions').catch(() => ({ data: [] }))
-    ])
+    Promise.all([api.get('/teams'), api.get('/auctions').catch(() => ({ data: [] }))])
       .then(([teamsRes, auctionsRes]) => {
         setTeams(teamsRes.data);
         const list = Array.isArray(auctionsRes.data) ? auctionsRes.data : [];
-        setAuctions(list.sort((a: AuctionRow, b: AuctionRow) =>
-          new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
-        ));
+        setAuctions(
+          list.sort(
+            (a: AuctionRow, b: AuctionRow) =>
+              new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+          )
+        );
       })
       .catch(console.error)
       .finally(() => setLoading(false));
   }, []);
 
+  const cards = [
+    { to: '/players', title: 'Players', desc: 'Import, approve & manage squad', emoji: '👤', color: 'from-indigo-600/20 to-indigo-900/10 border-indigo-800' },
+    { to: '/teams', title: 'Teams', desc: 'Purses, logos & squad slots', emoji: '🛡️', color: 'from-emerald-600/20 to-emerald-900/10 border-emerald-800' },
+    { to: '/auction', title: 'Live auction', desc: 'Bid, sell, recall & undo', emoji: '⚡', color: 'from-amber-600/20 to-amber-900/10 border-amber-800' },
+    { to: '/scoring', title: 'Live scoring', desc: 'Ball-by-ball + projector board', emoji: '📊', color: 'from-rose-600/20 to-rose-900/10 border-rose-800' },
+    { to: '/reports', title: 'Reports', desc: 'Sold list, squads, export', emoji: '📋', color: 'from-sky-600/20 to-sky-900/10 border-sky-800' },
+    { to: '/billing', title: 'Plan & billing', desc: 'Free vs Pro limits', emoji: '💎', color: 'from-violet-600/20 to-violet-900/10 border-violet-800' }
+  ];
+
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors">
-      <header className="bg-white dark:bg-gray-800 shadow-sm border-b dark:border-gray-700">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <span className="text-2xl">🏏</span>
-            <h1 className="text-xl font-bold text-gray-900 dark:text-white">Cricket Auction</h1>
-          </div>
-          <div className="flex items-center gap-3 flex-wrap justify-end">
-            <Link to="/live" className="text-sm text-indigo-600 dark:text-indigo-400 hover:underline">Public Live</Link>
-            <Link to="/scoring" className="text-sm text-amber-600 dark:text-amber-400 hover:underline">Scoring</Link>
-            <a href="/scoreboard" target="_blank" rel="noreferrer" className="text-sm text-rose-600 dark:text-rose-400 hover:underline">Scoreboard</a>
-            <Link to="/results" className="text-sm text-green-600 dark:text-green-400 hover:underline">Results</Link>
-            <ThemeToggle />
-            <span className="text-sm text-gray-600 dark:text-gray-300">
-              {user?.name} <span className="text-xs bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 px-2 py-0.5 rounded-full ml-1">{user?.role}</span>
-            </span>
-            <button onClick={logout} className="text-sm text-red-600 hover:text-red-700 font-medium">Logout</button>
-          </div>
-        </div>
-      </header>
+    <AppShell title="Dashboard" subtitle={user ? `Hi, ${user.name}` : undefined}>
+      <div className="mb-8">
+        <p className="text-indigo-400 text-sm font-semibold uppercase tracking-widest mb-1">Control center</p>
+        <h2 className="text-3xl font-black tracking-tight">Run your tournament</h2>
+        <p className="text-slate-400 mt-2 max-w-xl">
+          Auction players, score matches live, and share public boards — all from one place.
+        </p>
+      </div>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="mb-8">
-          <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Dashboard</h2>
-          <p className="text-gray-500 dark:text-gray-400 mt-1">Welcome back! Manage auction and live scoring from here.</p>
-        </div>
+      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-10">
+        {cards.map(c => (
+          <Link
+            key={c.to}
+            to={c.to}
+            className={`block rounded-2xl border bg-gradient-to-br ${c.color} p-5 hover:scale-[1.01] transition shadow-lg`}
+          >
+            <div className="text-3xl mb-3">{c.emoji}</div>
+            <div className="font-bold text-lg text-white">{c.title}</div>
+            <div className="text-sm text-slate-400 mt-1">{c.desc}</div>
+          </Link>
+        ))}
+      </div>
 
-        {user?.role === 'admin' && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
-            <Link to="/teams" className="bg-white dark:bg-gray-800 p-5 rounded-xl shadow-sm border dark:border-gray-700 hover:shadow-md transition flex flex-col items-center text-center">
-              <span className="text-3xl mb-2">👥</span>
-              <span className="font-semibold text-gray-800 dark:text-gray-200">Manage Teams</span>
-            </Link>
-            <Link to="/players" className="bg-white dark:bg-gray-800 p-5 rounded-xl shadow-sm border dark:border-gray-700 hover:shadow-md transition flex flex-col items-center text-center">
-              <span className="text-3xl mb-2">🧔‍♂️</span>
-              <span className="font-semibold text-gray-800 dark:text-gray-200">Players</span>
-            </Link>
-            <Link to="/auction" className="bg-white dark:bg-gray-800 p-5 rounded-xl shadow-sm border dark:border-gray-700 hover:shadow-md transition flex flex-col items-center text-center">
-              <span className="text-3xl mb-2">💰</span>
-              <span className="font-semibold text-gray-800 dark:text-gray-200">Live Auction</span>
-            </Link>
-            <Link to="/scoring" className="bg-white dark:bg-gray-800 p-5 rounded-xl shadow-sm border dark:border-gray-700 hover:shadow-md transition flex flex-col items-center text-center">
-              <span className="text-3xl mb-2">🏏</span>
-              <span className="font-semibold text-gray-800 dark:text-gray-200">Live Scoring</span>
-            </Link>
-            <Link to="/reports" className="bg-white dark:bg-gray-800 p-5 rounded-xl shadow-sm border dark:border-gray-700 hover:shadow-md transition flex flex-col items-center text-center">
-              <span className="text-3xl mb-2">📊</span>
-              <span className="font-semibold text-gray-800 dark:text-gray-200">Reports</span>
-            </Link>
+      <div className="grid lg:grid-cols-2 gap-6">
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-bold text-lg">Teams</h3>
+            <Link to="/teams" className="text-sm text-indigo-400 hover:underline">Manage</Link>
           </div>
-        )}
-
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border dark:border-gray-700 p-6">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Teams Overview</h3>
-          {loading ? (
-            <p className="text-gray-500">Loading teams...</p>
-          ) : teams.length === 0 ? (
-            <p className="text-gray-500">No teams created yet. {user?.role === 'admin' && 'Go to Manage Teams to add some.'}</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left">
-                <thead>
-                  <tr className="border-b dark:border-gray-700 text-sm text-gray-500">
-                    <th className="pb-3 font-medium">Team</th>
-                    <th className="pb-3 font-medium">Total Purse</th>
-                    <th className="pb-3 font-medium">Remaining</th>
-                    <th className="pb-3 font-medium">Spent</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {teams.map(team => (
-                    <tr key={team.id} className="border-b dark:border-gray-700 last:border-0">
-                      <td className="py-3 font-medium text-gray-900 dark:text-white">
-                        <div className="flex items-center gap-2">
-                          {team.logoUrl ? <img src={team.logoUrl} alt="" className="w-7 h-7 rounded object-cover" /> : null}
-                          {team.name}
-                        </div>
-                      </td>
-                      <td className="py-3 text-gray-700 dark:text-gray-300">₹{team.purse.toLocaleString()}</td>
-                      <td className="py-3 text-green-600 font-medium">₹{team.remainingPurse.toLocaleString()}</td>
-                      <td className="py-3 text-red-500">₹{(team.purse - team.remainingPurse).toLocaleString()}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+          {loading && <p className="text-slate-500 text-sm">Loading…</p>}
+          {!loading && teams.length === 0 && (
+            <p className="text-slate-500 text-sm">No teams yet. Add teams to start an auction.</p>
           )}
+          <ul className="space-y-2">
+            {teams.slice(0, 8).map(t => (
+              <li key={t.id} className="flex items-center justify-between gap-2 py-2 border-b border-slate-800 last:border-0">
+                <div className="flex items-center gap-2 min-w-0">
+                  {t.logoUrl ? (
+                    <img src={t.logoUrl} alt="" className="w-8 h-8 rounded-full object-cover" />
+                  ) : (
+                    <span className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-xs">🏏</span>
+                  )}
+                  <span className="font-medium truncate">{t.name}</span>
+                </div>
+                <span className="text-sm text-slate-400 tabular-nums shrink-0">
+                  ₹{(t.remainingPurse ?? t.purse).toLocaleString()}
+                </span>
+              </li>
+            ))}
+          </ul>
         </div>
 
-        <section className="mt-8 bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 p-4">
-          <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-            <h2 className="font-semibold text-gray-900 dark:text-white">Auction history</h2>
-            <div className="flex gap-3 text-sm">
-              <a href="/live" target="_blank" rel="noreferrer" className="text-indigo-600 dark:text-indigo-400 hover:underline">Open live</a>
-              <a href="/scoreboard" target="_blank" rel="noreferrer" className="text-rose-600 dark:text-rose-400 hover:underline">Scoreboard</a>
-              <a href="/results" target="_blank" rel="noreferrer" className="text-green-600 dark:text-green-400 hover:underline">Public results</a>
-            </div>
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-bold text-lg">Auctions</h3>
+            <Link to="/auction" className="text-sm text-indigo-400 hover:underline">Open</Link>
           </div>
-          {auctions.length === 0 ? (
-            <p className="text-sm text-gray-500 dark:text-gray-400">No auctions yet.</p>
-          ) : (
-            <ul className="space-y-2 text-sm">
-              {auctions.map(a => (
-                <li key={a.id} className="flex flex-wrap justify-between gap-2 border-b dark:border-gray-700 pb-2 last:border-0">
-                  <span className="text-gray-900 dark:text-white font-medium">{a.name}</span>
-                  <span className={`text-xs px-2 py-0.5 rounded-full ${
-                    a.status === 'live' ? 'bg-green-100 text-green-700' :
-                    a.status === 'completed' ? 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300' :
-                    a.status === 'paused' ? 'bg-yellow-100 text-yellow-700' :
-                    'bg-blue-100 text-blue-700'
-                  }`}>{a.status}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-      </main>
-    </div>
+          {loading && <p className="text-slate-500 text-sm">Loading…</p>}
+          {!loading && auctions.length === 0 && <p className="text-slate-500 text-sm">No auctions yet.</p>}
+          <ul className="space-y-2">
+            {auctions.slice(0, 8).map(a => (
+              <li key={a.id} className="flex items-center justify-between gap-2 py-2 border-b border-slate-800 last:border-0">
+                <span className="font-medium truncate">{a.name}</span>
+                <span className={`text-xs px-2 py-0.5 rounded-full shrink-0 ${
+                  a.status === 'live' ? 'bg-emerald-900/50 text-emerald-300' :
+                  a.status === 'completed' ? 'bg-slate-800 text-slate-400' : 'bg-amber-900/40 text-amber-300'
+                }`}>{a.status}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+
+      <div className="mt-8 flex flex-wrap gap-3 text-sm">
+        <Link to="/live" className="text-slate-400 hover:text-indigo-400">Public live board →</Link>
+        <Link to="/scoreboard" className="text-slate-400 hover:text-rose-400">Projector scoreboard →</Link>
+        <Link to="/welcome" className="text-slate-400 hover:text-white">Marketing page →</Link>
+      </div>
+    </AppShell>
   );
 }
