@@ -13,9 +13,9 @@
   --separator: rgba(60, 60, 67, 0.12);
   --fill: rgba(120, 120, 128, 0.16);
   --fill-2: rgba(120, 120, 128, 0.08);
-  --glass: rgba(255, 255, 255, 0.55);
-  --glass-thick: rgba(255, 255, 255, 0.72);
-  --glass-thin: rgba(255, 255, 255, 0.35);
+  --glass: rgba(255, 255, 255, 0.38);
+  --glass-thick: rgba(255, 255, 255, 0.55);
+  --glass-thin: rgba(255, 255, 255, 0.28);
   --glass-edge: rgba(255, 255, 255, 0.65);
   --glass-edge-outer: rgba(0, 0, 0, 0.06);
   --shadow-glass: 0 8px 32px rgba(0, 0, 0, 0.08), 0 2px 8px rgba(0, 0, 0, 0.04);
@@ -36,9 +36,9 @@ html.dark {
   --separator: rgba(84, 84, 88, 0.45);
   --fill: rgba(120, 120, 128, 0.32);
   --fill-2: rgba(120, 120, 128, 0.18);
-  --glass: rgba(40, 40, 42, 0.55);
-  --glass-thick: rgba(44, 44, 46, 0.78);
-  --glass-thin: rgba(50, 50, 52, 0.35);
+  --glass: rgba(40, 40, 42, 0.42);
+  --glass-thick: rgba(44, 44, 46, 0.58);
+  --glass-thin: rgba(50, 50, 52, 0.28);
   --glass-edge: rgba(255, 255, 255, 0.14);
   --glass-edge-outer: rgba(0, 0, 0, 0.5);
   --shadow-glass: 0 8px 40px rgba(0, 0, 0, 0.55), 0 2px 12px rgba(0, 0, 0, 0.35);
@@ -86,8 +86,8 @@ html.dark .page-mesh {
 .glass {
   position: relative;
   background: var(--glass);
-  backdrop-filter: blur(40px) saturate(180%);
-  -webkit-backdrop-filter: blur(40px) saturate(180%);
+  backdrop-filter: blur(48px) saturate(200%);
+  -webkit-backdrop-filter: blur(48px) saturate(200%);
   border-radius: var(--radius-card);
   box-shadow: var(--shadow-glass);
   border: 0.5px solid var(--glass-edge-outer);
@@ -148,8 +148,8 @@ html.dark .glass::after {
 .glass-thick {
   position: relative;
   background: var(--glass-thick);
-  backdrop-filter: blur(50px) saturate(200%);
-  -webkit-backdrop-filter: blur(50px) saturate(200%);
+  backdrop-filter: blur(56px) saturate(220%);
+  -webkit-backdrop-filter: blur(56px) saturate(220%);
   border-radius: var(--radius-sheet);
   box-shadow: var(--shadow-glass), inset 0 1px 0 rgba(255, 255, 255, 0.2);
   border: 0.5px solid var(--glass-edge-outer);
@@ -205,8 +205,8 @@ html.dark .glass-thick::after {
   top: 0;
   z-index: 50;
   background: var(--glass-thin);
-  backdrop-filter: blur(40px) saturate(180%);
-  -webkit-backdrop-filter: blur(40px) saturate(180%);
+  backdrop-filter: blur(48px) saturate(200%);
+  -webkit-backdrop-filter: blur(48px) saturate(200%);
   border-bottom: 0.5px solid var(--separator);
   box-shadow: 0 1px 0 rgba(255, 255, 255, 0.25) inset;
 }
@@ -252,18 +252,9 @@ html.dark .glass-nav {
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.2);
 }
 
-.as-btn-primary:hover {
-  filter: brightness(1.06);
-}
-
-.as-btn-primary:active {
-  transform: scale(0.97);
-}
-
-.as-btn-primary:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
+.as-btn-primary:hover { filter: brightness(1.06); }
+.as-btn-primary:active { transform: scale(0.97); }
+.as-btn-primary:disabled { opacity: 0.45; cursor: not-allowed; }
 
 .as-btn-ghost {
   display: inline-flex;
@@ -280,13 +271,8 @@ html.dark .glass-nav {
   transition: transform 0.12s ease, background 0.12s ease;
 }
 
-.as-btn-ghost:hover {
-  background: var(--fill-2);
-}
-
-.as-btn-ghost:active {
-  transform: scale(0.97);
-}
+.as-btn-ghost:hover { background: var(--fill-2); }
+.as-btn-ghost:active { transform: scale(0.97); }
 
 .as-label {
   display: block;
@@ -303,10 +289,7 @@ html.dark .glass-nav {
   padding: 0.75rem 1rem;
   border-bottom: 0.5px solid var(--separator);
 }
-
-.glass-row:last-child {
-  border-bottom: none;
-}
+.glass-row:last-child { border-bottom: none; }
 
 .glass-island {
   display: inline-flex;
@@ -324,11 +307,7 @@ html.dark .glass-nav {
   font-weight: 510;
 }
 
-.glass table {
-  width: 100%;
-  border-collapse: collapse;
-}
-
+.glass table { width: 100%; border-collapse: collapse; }
 .glass th {
   text-align: left;
   font-size: 12px;
@@ -337,21 +316,14 @@ html.dark .glass-nav {
   padding: 0.75rem 1rem;
   border-bottom: 0.5px solid var(--separator);
 }
-
 .glass td {
   padding: 0.75rem 1rem;
   border-bottom: 0.5px solid var(--separator);
   color: var(--text);
   font-size: 14px;
 }
-
-.glass tr:last-child td {
-  border-bottom: none;
-}
+.glass tr:last-child td { border-bottom: none; }
 
 @media (prefers-reduced-motion: reduce) {
-  .as-btn-primary,
-  .as-btn-ghost {
-    transition: none;
-  }
+  .as-btn-primary, .as-btn-ghost { transition: none; }
 }

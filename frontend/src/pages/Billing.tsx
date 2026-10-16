@@ -1,90 +1,106 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../services/api';
-import ThemeToggle from '../components/ThemeToggle';
+import AppShell from '../components/AppShell';
+
+interface OrgInfo {
+  id: string;
+  name: string;
+  plan: string;
+  planExpiresAt?: string | null;
+  limits?: Record<string, number | boolean>;
+  usage?: { teams: number; players: number; matches: number; auctions: number };
+}
 
 export default function Billing() {
-  const [org, setOrg] = useState<any>(null);
+  const [org, setOrg] = useState<OrgInfo | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
-  const [loading, setLoading] = useState(false);
 
-  const load = () => { api.get('/orgs/me').then(r => setOrg(r.data)).catch(console.error); };
+  const load = () => {
+    setLoading(true);
+    api.get('/orgs/me')
+      .then(r => setOrg(r.data))
+      .catch(() => setOrg(null))
+      .finally(() => setLoading(false));
+  };
+
   useEffect(() => { load(); }, []);
 
-  const upgrade = async () => {
-    setLoading(true);
+  const activateDemo = async () => {
+    setBusy(true);
     setMsg('');
     try {
-      const order = await api.post('/billing/create-order');
-      if (order.data.demo) {
-        await api.post('/billing/demo-activate');
-        setMsg('Pro activated (demo mode — set RAZORPAY keys for real payments).');
-        load();
-      } else {
-        const options = {
-          key: order.data.keyId,
-          amount: order.data.amount,
-          currency: order.data.currency,
-          name: org?.name || 'AuctionScore Pro',
-          description: 'Pro plan — 90 days',
-          order_id: order.data.orderId,
-          handler: async (response: any) => {
-            try {
-              await api.post('/billing/verify', { ...response, paymentId: order.data.paymentId });
-              setMsg('Payment successful — Pro unlocked!');
-              load();
-            } catch {
-              setMsg('Payment verification failed.');
-            }
-          }
-        };
-        // @ts-ignore
-        if (window.Razorpay) {
-          // @ts-ignore
-          new window.Razorpay(options).open();
-        } else {
-          const s = document.createElement('script');
-          s.src = 'https://checkout.razorpay.com/v1/checkout.js';
-          s.onload = () => { /* @ts-ignore */ new window.Razorpay(options).open(); };
-          document.body.appendChild(s);
-        }
-      }
-    } catch (err: any) {
-      setMsg(err.response?.data?.error || 'Upgrade failed');
+      await api.post('/billing/demo-activate');
+      setMsg('Pro activated (demo).');
+      load();
+    } catch (e: any) {
+      setMsg(e.response?.data?.error || 'Could not activate');
     } finally {
-      setLoading(false);
+      setBusy(false);
     }
   };
 
+  const isPro = org?.plan === 'pro';
+
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      <header className="bg-white dark:bg-gray-800 border-b dark:border-gray-700">
-        <div className="max-w-3xl mx-auto px-4 py-3 flex items-center justify-between">
-          <Link to="/" className="text-sm text-gray-500">← Dashboard</Link>
-          <ThemeToggle />
-        </div>
-      </header>
-      <main className="max-w-3xl mx-auto px-4 py-8 space-y-6">
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Plan & billing</h1>
-        {org && (
-          <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 p-5">
-            <div className="flex justify-between items-start">
-              <div>
-                <div className="text-sm text-gray-500">Organization</div>
-                <div className="text-xl font-bold text-gray-900 dark:text-white">{org.name}</div>
-              </div>
-              <span className={`px-3 py-1 rounded-full text-sm font-semibold ${org.plan === 'pro' ? 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-200' : 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200'}`}>{(org.plan || 'free').toUpperCase()}</span>
+    <AppShell title="Billing">
+      <div className="mb-6">
+        <h2 className="text-[28px] font-semibold tracking-tight" style={{ color: 'var(--text)' }}>Plan & limits</h2>
+        <p className="text-[15px] mt-1" style={{ color: 'var(--text-2)' }}>
+          Free tier works offline. Pro unlocks higher limits (Razorpay optional).
+        </p>
+      </div>
+
+      {loading ? (
+        <div className="glass p-8 text-center" style={{ color: 'var(--text-2)' }}>Loading…</div>
+      ) : (
+        <div className="grid sm:grid-cols-2 gap-3.5">
+          <div className="glass p-6">
+            <div className="text-[13px]" style={{ color: 'var(--text-2)' }}>Organization</div>
+            <div className="text-[22px] font-semibold mt-1" style={{ color: 'var(--text)' }}>{org?.name || '—'}</div>
+            <div className="mt-4 flex items-center gap-2">
+              <span className="glass-island text-[12px]" style={{ color: isPro ? '#30d158' : 'var(--text-2)' }}>
+                {isPro ? 'Pro' : 'Free'}
+              </span>
+              {org?.planExpiresAt && (
+                <span className="text-[13px]" style={{ color: 'var(--text-2)' }}>
+                  until {new Date(org.planExpiresAt).toLocaleDateString()}
+                </span>
+              )}
             </div>
-            {org.planExpiresAt && <p className="text-sm text-gray-500 mt-2">Pro expires: {new Date(org.planExpiresAt).toLocaleDateString()}</p>}
+            {msg && <p className="mt-3 text-[14px]" style={{ color: 'var(--accent)' }}>{msg}</p>}
+            {!isPro && (
+              <button type="button" onClick={activateDemo} disabled={busy} className="as-btn-primary mt-5 text-sm">
+                {busy ? '…' : 'Activate Pro (demo)'}
+              </button>
+            )}
           </div>
-        )}
-        <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 p-5">
-          <h2 className="font-bold text-gray-900 dark:text-white mb-2">Upgrade to Pro</h2>
-          <p className="text-sm text-gray-500 mb-4">₹1499 for 90 days. Photos still auto-clear after 15 days.</p>
-          <button type="button" disabled={loading || org?.plan === 'pro'} onClick={upgrade} className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white px-5 py-2.5 rounded-lg font-medium">{org?.plan === 'pro' ? 'Already on Pro' : loading ? 'Please wait…' : 'Upgrade to Pro'}</button>
-          {msg && <p className="mt-3 text-sm text-emerald-600 dark:text-emerald-400">{msg}</p>}
+
+          <div className="glass p-6">
+            <div className="text-[13px] mb-3" style={{ color: 'var(--text-2)' }}>Usage</div>
+            {[
+              ['Teams', org?.usage?.teams, org?.limits?.maxTeams],
+              ['Players', org?.usage?.players, org?.limits?.maxPlayers],
+              ['Matches', org?.usage?.matches, org?.limits?.maxMatches],
+              ['Auctions', org?.usage?.auctions, org?.limits?.maxAuctions]
+            ].map(([label, used, max]) => (
+              <div key={String(label)} className="glass-row !px-0">
+                <span style={{ color: 'var(--text)' }}>{label}</span>
+                <span className="ml-auto tabular-nums text-[14px]" style={{ color: 'var(--text-2)' }}>
+                  {used ?? 0}{max != null && max !== true ? ` / ${max}` : ''}
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
-      </main>
-    </div>
+      )}
+
+      <p className="mt-6 text-[13px]" style={{ color: 'var(--text-3)' }}>
+        Razorpay is optional — leave keys unset and use demo activate for testing.{' '}
+        <Link to="/" style={{ color: 'var(--accent)' }}>Back home</Link>
+      </p>
+    </AppShell>
   );
 }

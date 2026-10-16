@@ -1,75 +1,131 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { publicApi } from '../services/api';
+import ThemeToggle from '../components/ThemeToggle';
+
+interface Row {
+  rank: number;
+  teamId: string | null;
+  teamName: string;
+  logoUrl?: string | null;
+  played: number;
+  won: number;
+  lost: number;
+  tied?: number;
+  nr?: number;
+  points: number;
+  nrr?: number;
+}
+
+interface Recent {
+  id: string;
+  team1Name?: string;
+  team2Name?: string;
+  result?: string;
+  status?: string;
+}
 
 export default function PointsTable() {
-  const [rows, setRows] = useState<any[]>([]);
-  const [recent, setRecent] = useState<any[]>([]);
+  const [rows, setRows] = useState<Row[]>([]);
+  const [recent, setRecent] = useState<Recent[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    publicApi.get('/matches/public/points').then(res => {
-      const data = res.data;
-      if (Array.isArray(data)) { setRows(data); setRecent([]); }
-      else { setRows(data.table || []); setRecent(data.recent || []); }
-    }).catch(console.error).finally(() => setLoading(false));
+    publicApi
+      .get('/matches/public/points')
+      .then(r => {
+        setRows(r.data?.table || r.data?.points || r.data || []);
+        setRecent(r.data?.recent || r.data?.matches || []);
+      })
+      .catch(() => {
+        setRows([]);
+        setRecent([]);
+      })
+      .finally(() => setLoading(false));
   }, []);
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      <header className="bg-white dark:bg-gray-800 border-b dark:border-gray-700">
-        <div className="max-w-3xl mx-auto px-4 py-4 flex justify-between">
-          <h1 className="text-xl font-bold text-gray-900 dark:text-white">Points table</h1>
-          <Link to="/scoreboard" className="text-sm text-rose-600 hover:underline">Scoreboard</Link>
+    <div className="page-mesh min-h-screen" style={{ color: 'var(--text)' }}>
+      <header className="glass-nav">
+        <div className="max-w-4xl mx-auto px-4 py-3.5 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 min-w-0">
+            <Link to="/welcome" className="text-[20px]">🏏</Link>
+            <div>
+              <div className="text-[11px] uppercase tracking-wide" style={{ color: 'var(--text-2)' }}>Tournament</div>
+              <h1 className="font-semibold text-[17px]" style={{ color: 'var(--text)' }}>Points table</h1>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 text-[13px]">
+            <ThemeToggle />
+            <Link to="/live" style={{ color: 'var(--text-2)' }}>Live</Link>
+            <Link to="/results" style={{ color: 'var(--text-2)' }}>Results</Link>
+          </div>
         </div>
       </header>
-      <main className="max-w-3xl mx-auto px-4 py-6 space-y-8">
-        {loading && <div className="text-center text-gray-500 py-12">Loading...</div>}
-        {!loading && rows.length === 0 && (
-          <div className="bg-white dark:bg-gray-800 rounded-xl border p-10 text-center text-gray-500">No completed matches yet.</div>
-        )}
-        {rows.length > 0 && (
-          <div className="bg-white dark:bg-gray-800 rounded-xl border overflow-hidden">
-            <table className="w-full text-sm">
+
+      <main className="max-w-4xl mx-auto px-4 py-8 space-y-4">
+        <div className="glass overflow-hidden">
+          {loading ? (
+            <p className="p-8 text-center text-[14px]" style={{ color: 'var(--text-2)' }}>Loading…</p>
+          ) : rows.length === 0 ? (
+            <p className="p-8 text-center text-[14px]" style={{ color: 'var(--text-2)' }}>No standings yet.</p>
+          ) : (
+            <table>
               <thead>
-                <tr className="bg-gray-50 dark:bg-gray-900/50 text-xs text-gray-500 uppercase">
-                  <th className="text-left px-4 py-3">#</th>
-                  <th className="text-left px-2 py-3">Team</th>
-                  <th className="text-center px-2 py-3">P</th>
-                  <th className="text-center px-2 py-3">W</th>
-                  <th className="text-center px-2 py-3">L</th>
-                  <th className="text-center px-2 py-3">Pts</th>
-                  <th className="text-right px-4 py-3">NRR</th>
+                <tr>
+                  <th>#</th>
+                  <th>Team</th>
+                  <th>P</th>
+                  <th>W</th>
+                  <th>L</th>
+                  <th>Pts</th>
+                  <th>NRR</th>
                 </tr>
               </thead>
               <tbody>
-                {rows.map((r: any) => (
-                  <tr key={r.teamId || r.teamName} className="border-t dark:border-gray-700">
-                    <td className="px-4 py-3 font-bold text-gray-500">{r.rank}</td>
-                    <td className="px-2 py-3 font-semibold">{r.teamName}</td>
-                    <td className="text-center">{r.played}</td>
-                    <td className="text-center">{r.won}</td>
-                    <td className="text-center">{r.lost}</td>
-                    <td className="text-center font-bold text-indigo-600">{r.points}</td>
-                    <td className="text-right px-4">{r.nrr > 0 ? '+' : ''}{(r.nrr || 0).toFixed(3)}</td>
+                {rows.map((r, i) => (
+                  <tr key={r.teamId || i}>
+                    <td style={{ color: 'var(--text-2)' }}>{r.rank ?? i + 1}</td>
+                    <td>
+                      <div className="flex items-center gap-2">
+                        {r.logoUrl ? (
+                          <img src={r.logoUrl} alt="" className="w-7 h-7 rounded-full object-cover" />
+                        ) : null}
+                        <span className="font-medium">{r.teamName}</span>
+                      </div>
+                    </td>
+                    <td>{r.played}</td>
+                    <td>{r.won}</td>
+                    <td>{r.lost}</td>
+                    <td className="font-semibold">{r.points}</td>
+                    <td style={{ color: 'var(--text-2)' }}>
+                      {r.nrr != null ? Number(r.nrr).toFixed(3) : '—'}
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
-          </div>
-        )}
+          )}
+        </div>
+
         {recent.length > 0 && (
-          <div>
-            <h2 className="text-lg font-bold mb-3 text-gray-900 dark:text-white">Recent results</h2>
-            <div className="space-y-2">
-              {recent.map((m: any) => (
-                <Link key={m.id} to={`/match/${m.id}`} className="block bg-white dark:bg-gray-800 rounded-xl border p-4 hover:border-indigo-400">
-                  <div className="font-semibold">{m.name}</div>
-                  <div className="text-sm text-gray-500">{m.teamAName} {m.scoreA} · {m.teamBName} {m.scoreB}</div>
-                  <div className="text-xs text-emerald-600 mt-1">{m.summary || 'Completed'}</div>
+          <div className="glass overflow-hidden">
+            <div className="px-4 pt-4 pb-2 font-semibold text-[17px]">Recent results</div>
+            {recent.slice(0, 10).map(m => (
+              <div key={m.id} className="glass-row">
+                <div className="min-w-0 flex-1">
+                  <div className="font-medium text-[14px] truncate">
+                    {m.team1Name || 'Team A'} vs {m.team2Name || 'Team B'}
+                  </div>
+                  <div className="text-[13px]" style={{ color: 'var(--text-2)' }}>
+                    {m.result || m.status || '—'}
+                  </div>
+                </div>
+                <Link to={`/match/${m.id}`} className="text-[13px] font-medium" style={{ color: 'var(--accent)' }}>
+                  View
                 </Link>
-              ))}
-            </div>
+              </div>
+            ))}
           </div>
         )}
       </main>
