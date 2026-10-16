@@ -61,7 +61,20 @@ router.get('/public/active', (req, res) => {
   const auctions = getAuctions();
   const active = auctions.find(a => a.status === 'live' || a.status === 'paused') ||
                  auctions.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0] || null;
-  res.json(active);
+  if (!active) return res.json(null);
+  const players = getPlayers();
+  const teams = getTeams();
+  const currentPlayer = active.currentPlayerId
+    ? players.find(p => p.id === active.currentPlayerId) || null
+    : null;
+  const bidder = active.currentBidderTeamId
+    ? teams.find(t => t.id === active.currentBidderTeamId)
+    : null;
+  res.json({
+    ...active,
+    currentPlayer,
+    currentBidderName: bidder?.name || null
+  });
 });
 
 router.get('/:id', authMiddleware, (req, res) => {
@@ -485,10 +498,7 @@ router.post('/fresh', authMiddleware, requireRole('admin'), (req, res) => {
     completedAt: null
   });
 
-  res.status(201).json({
-    auction,
-    message: 'Fresh auction created. Team purses reset. Sold players set to Approved.'
-  });
+  res.status(201).json({ auction, message: 'Fresh auction created. All purses reset, players Approved.' });
 });
 
 router.post('/:id/recall-unsold', authMiddleware, requireRole('admin'), (req, res) => {
