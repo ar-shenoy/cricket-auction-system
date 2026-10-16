@@ -2,39 +2,39 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  color-scheme: dark;
-}
-
 body {
   margin: 0;
   min-height: 100vh;
-  background: #020617;
-  color: #f8fafc;
   font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
-.as-card {
-  @apply bg-slate-900 border border-slate-800 rounded-2xl;
+html.dark body {
+  background: #020617;
+  color: #f8fafc;
 }
 
-.as-btn {
-  @apply px-4 py-2.5 rounded-xl font-medium transition;
+html:not(.dark) body {
+  background: #f8fafc;
+  color: #0f172a;
+}
+
+.as-card {
+  @apply bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-2xl;
 }
 
 .as-btn-primary {
-  @apply as-btn bg-indigo-600 hover:bg-indigo-500 text-white;
+  @apply px-4 py-2.5 rounded-xl font-medium bg-indigo-600 hover:bg-indigo-500 text-white transition;
 }
 
 .as-btn-ghost {
-  @apply as-btn border border-slate-700 text-slate-200 hover:border-slate-500 hover:bg-slate-900;
+  @apply px-4 py-2.5 rounded-xl font-medium border border-gray-300 dark:border-slate-700 text-gray-800 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-900 transition;
 }
 
 .as-input {
-  @apply w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white placeholder-slate-500 outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500;
+  @apply w-full px-4 py-2.5 rounded-xl bg-white dark:bg-slate-950 border border-gray-300 dark:border-slate-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-slate-500 outline-none focus:ring-2 focus:ring-indigo-500;
 }
 
 .as-label {
-  @apply block text-sm font-medium text-slate-300 mb-1.5;
+  @apply block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5;
 }
