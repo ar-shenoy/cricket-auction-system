@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { publicApi, getSocketUrl } from '../services/api';
 import { startKeepAliveInterval } from '../utils/keepAlive';
@@ -21,12 +21,31 @@ interface Team {
   logoUrl?: string;
 }
 
+interface SoldRow {
+  id: string;
+  soldPrice: number;
+  soldAt?: string;
+  player?: Player;
+  team?: Team;
+}
+
 export default function LiveViewer() {
   const [auction, setAuction] = useState<any>(null);
   const [current, setCurrent] = useState<Player | null>(null);
   const [teams, setTeams] = useState<Team[]>([]);
+  const [soldList, setSoldList] = useState<SoldRow[]>([]);
   const [lastBid, setLastBid] = useState<{ teamName?: string; amount?: number } | null>(null);
+  const [lastSale, setLastSale] = useState<{ playerName: string; teamName: string; price: number; status: string } | null>(null);
   const [loading, setLoading] = useState(true);
+  const socketRef = useRef<Socket | null>(null);
+  const joinedIdRef = useRef<string | null>(null);
+
+  const loadSold = async (auctionId: string) => {
+    try {
+      const res = await publicApi.get(`/auctions/${auctionId}/public/sold`);
+      setSoldList((res.data || []).slice().reverse());
+    } catch { /* ignore */ }
+  };
 
   const load = useCallback(async () => {
     try {
@@ -37,8 +56,24 @@ export default function LiveViewer() {
       const a = aRes.data;
       setAuction(a || null);
       setTeams(tRes.data || []);
-      if (a?.currentPlayer) setCurrent(a.currentPlayer);
-      if (a?.currentBid != null) setLastBid({ amount: a.currentBid, teamName: a.currentBidderName });
+      if (a?.currentPlayer) {
+        setCurrent(a.currentPlayer);
+      } else if (a?.currentPlayerId) {
+        try {
+          const pr = await publicApi.get(`/players/public/${a.currentPlayerId}`);
+          setCurrent(pr.data);
+        } catch {
+          setCurrent(null);
+        }
+      } else {
+        setCurrent(null);
+      }
+      if (a?.currentBid != null && a.currentBid > 0) {
+        setLastBid({ amount: a.currentBid, teamName: a.currentBidderName || undefined });
+      } else if (!a?.currentPlayerId) {
+        setLastBid(null);
+      }
+      if (a?.id) await loadSold(a.id);
     } catch (e) {
       console.error(e);
     } finally {
@@ -49,20 +84,69 @@ export default function LiveViewer() {
   useEffect(() => {
     load();
     startKeepAliveInterval();
-    const t = setInterval(load, 8000);
-    let socket: Socket | null = null;
-    try {
-      socket = io(getSocketUrl(), { transports: ['websocket', 'polling'] });
-      socket.on('player-up', (p: Player) => setCurrent(p));
-      socket.on('new-bid', (b: any) => setLastBid(b));
-      socket.on('player-sold', () => load());
-      socket.on('auction-update', () => load());
-    } catch {}
+    const poll = setInterval(load, 10000);
+
+    const socket = io(getSocketUrl(), { transports: ['websocket', 'polling'] });
+    socketRef.current = socket;
+
+    socket.on('player-selected', (data: { auction: any; player: Player }) => {
+      setAuction(data.auction);
+      setCurrent(data.player);
+      setLastBid({
+        amount: data.auction?.currentBid ?? data.player?.basePrice ?? 0,
+        teamName: undefined
+      });
+      setLastSale(null);
+    });
+
+    socket.on('new-bid', (data: { auction: any; bid: any; team: { id: string; name: string } }) => {
+      if (data.auction) setAuction(data.auction);
+      setLastBid({
+        amount: data.bid?.amount ?? data.auction?.currentBid,
+        teamName: data.team?.name
+      });
+    });
+
+    socket.on('player-sold', (data: { auction: any; result: any }) => {
+      if (data.auction) setAuction(data.auction);
+      setCurrent(null);
+      setLastBid(null);
+      const r = data.result;
+      if (r) {
+        setLastSale({
+          status: r.status || 'Sold',
+          playerName: r.player?.name || 'Player',
+          teamName: r.team?.name || '—',
+          price: r.price ?? r.sold?.soldPrice ?? 0
+        });
+        if (data.auction?.id) loadSold(data.auction.id);
+        publicApi.get('/teams').then(res => setTeams(res.data || [])).catch(() => {});
+      }
+    });
+
+    socket.on('auction-status', (a: any) => setAuction(a));
+    socket.on('auction-ended', (a: any) => {
+      setAuction(a);
+      setCurrent(null);
+      setLastBid(null);
+    });
+
     return () => {
-      clearInterval(t);
-      socket?.disconnect();
+      clearInterval(poll);
+      if (joinedIdRef.current) socket.emit('leave-auction', joinedIdRef.current);
+      socket.disconnect();
     };
   }, [load]);
+
+  useEffect(() => {
+    const id = auction?.id;
+    const socket = socketRef.current;
+    if (!socket || !id) return;
+    if (joinedIdRef.current === id) return;
+    if (joinedIdRef.current) socket.emit('leave-auction', joinedIdRef.current);
+    socket.emit('join-auction', id);
+    joinedIdRef.current = id;
+  }, [auction?.id]);
 
   return (
     <div className="min-h-screen page-mesh text-[var(--text-primary)]">
@@ -88,6 +172,30 @@ export default function LiveViewer() {
         {!loading && !auction && (
           <div className="glass rounded-[22px] p-10 text-center text-[var(--text-secondary)]">No live auction right now.</div>
         )}
+
+        {lastSale && (
+          <div
+            className="glass rounded-[22px] p-5 text-center"
+            style={{
+              border: lastSale.status === 'Sold' ? '1px solid rgba(48,209,88,0.4)' : '1px solid rgba(255,159,10,0.35)'
+            }}
+          >
+            <div className="text-xs font-semibold uppercase tracking-widest mb-1" style={{ color: lastSale.status === 'Sold' ? '#30d158' : '#ff9f0a' }}>
+              {lastSale.status === 'Sold' ? 'SOLD' : 'UNSOLD'}
+            </div>
+            <div className="text-2xl font-semibold text-[var(--text-primary)]">{lastSale.playerName}</div>
+            {lastSale.status === 'Sold' && (
+              <div className="mt-2 text-[15px] text-[var(--text-secondary)]">
+                to <span className="font-medium text-[var(--text-primary)]">{lastSale.teamName}</span>
+                {' '}for{' '}
+                <span className="font-semibold tabular-nums" style={{ color: '#30d158' }}>
+                  ₹{Number(lastSale.price).toLocaleString()}
+                </span>
+              </div>
+            )}
+          </div>
+        )}
+
         {current && (
           <div className="glass rounded-[28px] p-6 sm:p-8 text-center">
             {current.photoUrl && (
@@ -107,6 +215,13 @@ export default function LiveViewer() {
             )}
           </div>
         )}
+
+        {!current && auction && !lastSale && (
+          <div className="glass rounded-[22px] p-8 text-center text-[var(--text-secondary)]">
+            Waiting for next player…
+          </div>
+        )}
+
         <div className="glass rounded-[22px] p-5">
           <h3 className="font-semibold mb-4 text-[var(--text-primary)]">Team purses</h3>
           <div className="grid sm:grid-cols-2 gap-3">
@@ -127,6 +242,37 @@ export default function LiveViewer() {
             ))}
           </div>
         </div>
+
+        {soldList.length > 0 && (
+          <div className="glass rounded-[22px] p-5">
+            <h3 className="font-semibold mb-4 text-[var(--text-primary)]">
+              Sold ({soldList.length})
+            </h3>
+            <ul className="space-y-2 max-h-80 overflow-y-auto">
+              {soldList.map(s => (
+                <li
+                  key={s.id}
+                  className="flex items-center justify-between gap-3 rounded-2xl px-3 py-2.5 bg-black/5 dark:bg-white/5 text-[14px]"
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    {s.player?.photoUrl ? (
+                      <img src={s.player.photoUrl} alt="" className="w-8 h-8 rounded-full object-cover shrink-0" />
+                    ) : (
+                      <span className="w-8 h-8 rounded-full bg-black/5 dark:bg-white/10 flex items-center justify-center text-xs shrink-0">P</span>
+                    )}
+                    <div className="min-w-0">
+                      <div className="font-medium truncate text-[var(--text-primary)]">{s.player?.name || '—'}</div>
+                      <div className="text-[12px] text-[var(--text-secondary)] truncate">{s.team?.name || '—'}</div>
+                    </div>
+                  </div>
+                  <div className="font-semibold tabular-nums shrink-0" style={{ color: '#30d158' }}>
+                    ₹{Number(s.soldPrice || 0).toLocaleString()}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </main>
     </div>
   );
