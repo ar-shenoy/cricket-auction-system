@@ -1,14 +1,14 @@
+import React from 'react';
 import { useTheme } from '../context/ThemeContext';
 
 export default function ThemeToggle() {
   const { theme, toggleTheme } = useTheme();
-
   return (
     <button
+      type="button"
       onClick={toggleTheme}
-      className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition text-lg"
-      title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-      aria-label="Toggle dark mode"
+      className="text-xs sm:text-sm px-2 py-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
+      title="Toggle theme"
     >
       {theme === 'dark' ? '☀️' : '🌙'}
     </button>
