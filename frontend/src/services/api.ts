@@ -22,7 +22,7 @@ api.interceptors.response.use(
   (error) => {
     if (error.response?.status === 401) {
       const path = typeof window !== 'undefined' ? window.location.pathname : '';
-      if (path !== '/live' && !path.startsWith('/live') && path !== '/results' && !path.startsWith('/results')) {
+      if (path !== '/live' && !path.startsWith('/live') && path !== '/results' && !path.startsWith('/results') && path !== '/scoreboard' && !path.startsWith('/scoreboard')) {
         localStorage.removeItem('token');
         window.location.href = '/login';
       }
