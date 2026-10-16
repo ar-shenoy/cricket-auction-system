@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import AppShell from '../components/AppShell';
 import api, { getSocketUrl } from '../services/api';
 import { io, Socket } from 'socket.io-client';
 import { getIncrement, nextMinBid, maxBidForTeam, DEFAULT_BID_RULES, BidRule } from '../utils/bidRules';
@@ -51,14 +52,14 @@ interface SoldRecord {
 }
 
 export default function Auction() {
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const [auction, setAuction] = useState<Auction | null>(null);
   const [currentPlayer, setCurrentPlayer] = useState<Player | null>(null);
   const [teams, setTeams] = useState<Team[]>([]);
   const [availablePlayers, setAvailablePlayers] = useState<Player[]>([]);
   const [soldList, setSoldList] = useState<SoldRecord[]>([]);
   const [unsoldPlayers, setUnsoldPlayers] = useState<Player[]>([]);
-  const [bidAmount, setBidAmount] = useState<string>('');
+  const [bidAmount, setBidAmount] = useState('');
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
   const [creating, setCreating] = useState(false);
@@ -67,10 +68,7 @@ export default function Auction() {
 
   const loadAuction = useCallback(async () => {
     try {
-      const [auctionRes, teamsRes] = await Promise.all([
-        api.get('/auctions/active'),
-        api.get('/teams')
-      ]);
+      const [auctionRes, teamsRes] = await Promise.all([api.get('/auctions/active'), api.get('/teams')]);
       const active = auctionRes.data;
       setAuction(active);
       setTeams(teamsRes.data);
@@ -87,9 +85,7 @@ export default function Auction() {
           const playerRes = await api.get(`/players/${active.currentPlayerId}`);
           setCurrentPlayer(playerRes.data);
           setBidAmount(String(nextMinBid(active.currentBid || 0, !!active.currentBidderTeamId, active)));
-        } else {
-          setCurrentPlayer(null);
-        }
+        } else setCurrentPlayer(null);
       }
     } catch (err) {
       console.error(err);
@@ -126,8 +122,8 @@ export default function Auction() {
         text: data.result.status === 'Sold'
           ? `SOLD! ${data.result.player?.name} to ${data.result.team?.name} for ₹${data.result.price?.toLocaleString()}`
           : data.result.status === 'Undone'
-          ? `Undone: ${data.result.player?.name}`
-          : `UNSOLD: ${data.result.player?.name}`
+            ? `Undone: ${data.result.player?.name}`
+            : `UNSOLD: ${data.result.player?.name}`
       });
       if (auction.id) {
         api.get(`/auctions/${auction.id}/sold`).then(r => setSoldList(r.data));
@@ -339,9 +335,7 @@ export default function Auction() {
   const eligibleTeams = teams.filter(canTeamBid);
 
   useEffect(() => {
-    if (adminBidTeamId && !eligibleTeams.some(t => t.id === adminBidTeamId)) {
-      setAdminBidTeamId('');
-    }
+    if (adminBidTeamId && !eligibleTeams.some(t => t.id === adminBidTeamId)) setAdminBidTeamId('');
   }, [adminBidTeamId, eligibleTeams]);
 
   const recallUnsold = async () => {
@@ -363,274 +357,183 @@ export default function Auction() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
-        <div className="text-gray-500 dark:text-gray-400">Loading auction...</div>
-      </div>
+      <AppShell title="Live Auction">
+        <div className="glass p-10 text-center" style={{ color: 'var(--text-2)' }}>Loading…</div>
+      </AppShell>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-100 dark:bg-gray-900 transition-colors">
-      <header className="bg-white dark:bg-gray-800 shadow-sm border-b dark:border-gray-700 sticky top-0 z-20">
-        <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Link to="/" className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 text-sm">← Dashboard</Link>
-            <h1 className="text-lg font-bold text-gray-900 dark:text-white">
-              🏏 Live Auction
-              {auction && (
-                <span className={`ml-2 text-xs px-2 py-0.5 rounded-full font-medium ${
-                  auction.status === 'live' ? 'bg-green-100 text-green-700' :
-                  auction.status === 'paused' ? 'bg-yellow-100 text-yellow-700' :
-                  auction.status === 'completed' ? 'bg-gray-100 text-gray-600' :
-                  'bg-blue-100 text-blue-700'
-                }`}>{auction.status.toUpperCase()}</span>
-              )}
-            </h1>
-          </div>
-          <div className="flex items-center gap-3">
-            {myTeam && (
-              <span className="text-sm bg-indigo-50 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 px-3 py-1 rounded-full">
-                {myTeam.name}: ₹{myTeam.remainingPurse.toLocaleString()}
-              </span>
-            )}
-            <span className="text-sm text-gray-600 dark:text-gray-300">{user?.name}</span>
-            <a href="/live" target="_blank" rel="noreferrer" className="text-sm text-indigo-600 dark:text-indigo-400 hover:underline">Share live</a>
-            <button onClick={logout} className="text-sm text-red-600">Logout</button>
-          </div>
-        </div>
-      </header>
-
+    <AppShell title="Live Auction">
       {message && (
-        <div className="max-w-7xl mx-auto px-4 mt-3">
-          <div className={`px-4 py-2 rounded-lg text-sm font-medium ${
-            message.type === 'success' ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300' :
-            message.type === 'error' ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300' :
-            'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300'
-          }`}>{message.text}</div>
+        <div className="glass p-3 mb-4 text-[14px] font-medium" style={{
+          color: message.type === 'success' ? '#30d158' : message.type === 'error' ? '#ff3b30' : 'var(--accent)'
+        }}>{message.text}</div>
+      )}
+
+      {!auction && user?.role === 'admin' && (
+        <div className="glass p-8 text-center space-y-4">
+          <h2 className="text-[22px] font-semibold" style={{ color: 'var(--text)' }}>No active auction</h2>
+          <div className="flex flex-wrap gap-3 justify-center">
+            <button type="button" onClick={createAuction} disabled={creating} className="as-btn-primary">
+              {creating ? 'Creating…' : 'Create auction'}
+            </button>
+            <button type="button" onClick={freshAuction} className="as-btn-ghost">Fresh new auction</button>
+          </div>
         </div>
       )}
 
-      <main className="max-w-7xl mx-auto px-4 py-4">
-        {!auction && user?.role === 'admin' && (
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-8 text-center border dark:border-gray-700 space-y-3">
-            <h2 className="text-xl font-bold text-gray-900 dark:text-white">No Active Auction</h2>
-            <div className="flex flex-wrap gap-3 justify-center">
-              <button onClick={createAuction} disabled={creating} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-lg font-medium disabled:opacity-50">
-                {creating ? 'Creating...' : 'Create Auction'}
-              </button>
-              <button onClick={freshAuction} className="bg-slate-700 hover:bg-slate-800 text-white px-6 py-2.5 rounded-lg font-medium">✨ Fresh new auction</button>
-            </div>
-          </div>
-        )}
+      {!auction && user?.role !== 'admin' && (
+        <div className="glass p-8 text-center" style={{ color: 'var(--text-2)' }}>Waiting for admin…</div>
+      )}
 
-        {!auction && user?.role !== 'admin' && (
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow p-8 text-center text-gray-500 dark:text-gray-400">Waiting for admin...</div>
-        )}
-
-        {auction && (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-            <div className="lg:col-span-2 space-y-4">
-              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border dark:border-gray-700 overflow-hidden">
-                {currentPlayer ? (
-                  <div className="p-6">
-                    <div>
-                      <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">Now Auctioning</div>
-                      <h2 className="text-3xl font-bold text-gray-900 dark:text-white">{currentPlayer.name}</h2>
+      {auction && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3.5">
+          <div className="lg:col-span-2 space-y-3.5">
+            <div className="glass overflow-hidden">
+              {currentPlayer ? (
+                <div className="p-6">
+                  <div className="text-[13px] mb-1" style={{ color: 'var(--text-2)' }}>Now auctioning</div>
+                  <div className="flex gap-4 items-start">
+                    {currentPlayer.photoUrl && (
+                      <img src={currentPlayer.photoUrl} alt="" className="w-20 h-20 rounded-2xl object-cover" />
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <h2 className="text-[28px] font-semibold" style={{ color: 'var(--text)' }}>{currentPlayer.name}</h2>
                       <div className="flex flex-wrap gap-2 mt-2">
-                        <span className="bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 text-xs px-2 py-1 rounded-full">{currentPlayer.role}</span>
-                        {currentPlayer.city && <span className="bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 text-xs px-2 py-1 rounded-full">{currentPlayer.city}</span>}
-                        <span className="bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 text-xs px-2 py-1 rounded-full">Base: ₹{currentPlayer.basePrice?.toLocaleString() || 0}</span>
-                      </div>
-                      <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs text-gray-600 dark:text-gray-300">
-                        {currentPlayer.age != null && <div><span className="text-gray-400">Age</span><br/><span className="font-medium text-gray-900 dark:text-white">{currentPlayer.age}</span></div>}
-                        {currentPlayer.battingStyle && <div><span className="text-gray-400">Batting</span><br/><span className="font-medium text-gray-900 dark:text-white">{currentPlayer.battingStyle}</span></div>}
-                        {currentPlayer.bowlingStyle && <div><span className="text-gray-400">Bowling</span><br/><span className="font-medium text-gray-900 dark:text-white">{currentPlayer.bowlingStyle}</span></div>}
-                        {currentPlayer.city && <div><span className="text-gray-400">City</span><br/><span className="font-medium text-gray-900 dark:text-white">{currentPlayer.city}</span></div>}
-                      </div>
-                      {currentPlayer.bio && <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">{currentPlayer.bio}</p>}
-                    </div>
-
-                    <div className="mt-6 grid grid-cols-2 gap-4">
-                      <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4 text-center">
-                        <div className="text-xs text-gray-500 dark:text-gray-400">Current Bid</div>
-                        <div className="text-2xl font-bold text-gray-900 dark:text-white">₹{(auction.currentBid || 0).toLocaleString()}</div>
-                        <div className="text-xs text-indigo-600 dark:text-indigo-400 mt-1">Next step +₹{getIncrement(auction.currentBid || 0, auction).toLocaleString()}</div>
-                      </div>
-                      <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4 text-center">
-                        <div className="text-xs text-gray-500 dark:text-gray-400">Highest Bidder</div>
-                        <div className="text-lg font-semibold text-indigo-700 dark:text-indigo-300">{currentBidderName}</div>
+                        <span className="glass-island text-[11px]">{currentPlayer.role}</span>
+                        {currentPlayer.city && <span className="glass-island text-[11px]">{currentPlayer.city}</span>}
+                        <span className="glass-island text-[11px]">Base ₹{(currentPlayer.basePrice || 0).toLocaleString()}</span>
                       </div>
                     </div>
-
-                    {((user?.role === 'admin') || (user?.role === 'team_manager' && myTeam && canTeamBid(myTeam))) && auction.status === 'live' && (
-                      <div className="mt-6 space-y-3">
-                        {user?.role === 'admin' && (
-                          <div>
-                            <label className="block text-xs text-gray-500 dark:text-gray-400 mb-2">Select team to bid (has purse and open squad slots)</label>
-                            <div className="flex flex-wrap gap-2">
-                              {eligibleTeams.length === 0 && (
-                                <p className="text-xs text-gray-500 dark:text-gray-400">No teams can bid (purse empty or squad full).</p>
-                              )}
-                              {eligibleTeams.map(tm => {
-                                const bought = soldList.filter(s => s.teamId === tm.id).length;
-                                const maxB = maxBidForTeam(tm.remainingPurse, bought, tm.maxPlayers);
-                                const selected = adminBidTeamId === tm.id;
-                                return (
-                                  <button
-                                    key={tm.id}
-                                    type="button"
-                                    onClick={() => setAdminBidTeamId(tm.id)}
-                                    className={`px-3 py-2 rounded-lg text-sm font-medium border transition ${
-                                      selected
-                                        ? 'bg-indigo-600 text-white border-indigo-600'
-                                        : 'bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 border-gray-300 dark:border-gray-600 hover:border-indigo-400'
-                                    }`}
-                                  >
-                                    {tm.name}
-                                    <span className="block text-[10px] opacity-80 font-normal">
-                                      ₹{tm.remainingPurse.toLocaleString()} · max ₹{maxB.toLocaleString()}
-                                    </span>
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        )}
-                        {user?.role === 'team_manager' && myTeam && canTeamBid(myTeam) && (
-                          <p className="text-xs text-gray-500 dark:text-gray-400">
-                            Your max bid: ₹{maxBidForTeam(myTeam.remainingPurse, soldList.filter(s => s.teamId === myTeam.id).length, myTeam.maxPlayers).toLocaleString()}
-                          </p>
-                        )}
-                        {user?.role === 'admin' && adminBidTeamId && (() => {
-                          const tm = eligibleTeams.find(x => x.id === adminBidTeamId);
-                          if (!tm) return null;
-                          const bought = soldList.filter(s => s.teamId === tm.id).length;
-                          const maxB = maxBidForTeam(tm.remainingPurse, bought, tm.maxPlayers);
-                          return (
-                            <p className="text-xs text-indigo-600 dark:text-indigo-400">
-                              {tm.name} max: ₹{maxB.toLocaleString()}
-                            </p>
-                          );
-                        })()}
-                        <div className="flex flex-col sm:flex-row gap-3 items-end">
-                          <div className="flex-1">
-                            <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Bid amount (₹)</label>
-                            <input type="number" value={bidAmount} onChange={e => setBidAmount(e.target.value)}
-                              className="w-full border dark:border-gray-600 rounded-lg px-4 py-2.5 text-lg font-medium focus:ring-2 focus:ring-blue-500 outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                              step={getIncrement(auction.currentBid || 0, auction)} />
-                          </div>
-                          <button onClick={placeBid} className="bg-green-600 hover:bg-green-700 text-white font-bold px-8 py-2.5 rounded-lg text-lg shadow">PLACE BID</button>
+                  </div>
+                  <div className="mt-5 grid grid-cols-2 gap-3">
+                    <div className="glass p-4 text-center">
+                      <div className="text-[12px]" style={{ color: 'var(--text-2)' }}>Current bid</div>
+                      <div className="text-[28px] font-semibold tabular-nums" style={{ color: 'var(--accent)' }}>
+                        ₹{(auction.currentBid || 0).toLocaleString()}
+                      </div>
+                      <div className="text-[13px] mt-1" style={{ color: 'var(--text-2)' }}>by {currentBidderName}</div>
+                    </div>
+                    <div className="glass p-4 space-y-2">
+                      {user?.role === 'admin' && (
+                        <select value={adminBidTeamId} onChange={e => setAdminBidTeamId(e.target.value)} className="as-input text-sm">
+                          <option value="">Team to bid…</option>
+                          {eligibleTeams.map(tm => (
+                            <option key={tm.id} value={tm.id}>{tm.name} (₹{tm.remainingPurse.toLocaleString()})</option>
+                          ))}
+                        </select>
+                      )}
+                      <div className="flex gap-2">
+                        <input type="number" value={bidAmount} onChange={e => setBidAmount(e.target.value)} className="as-input" />
+                        <button type="button" onClick={placeBid} className="as-btn-primary shrink-0">Bid</button>
+                      </div>
+                      {user?.role === 'admin' && (
+                        <div className="flex flex-wrap gap-2 pt-1">
+                          <button type="button" onClick={sellPlayer} className="as-btn-primary text-sm" style={{ background: '#30d158' }}>Sell</button>
+                          <button type="button" onClick={markUnsold} className="as-btn-ghost text-sm">Unsold</button>
                         </div>
-                      </div>
-                    )}
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-8 text-center" style={{ color: 'var(--text-2)' }}>
+                  {auction.status === 'live' ? 'Select a player to start bidding' : `Auction is ${auction.status}`}
+                </div>
+              )}
+            </div>
 
-                    {user?.role === 'admin' && (
-                      <div className="mt-4 flex flex-wrap gap-2">
-                        <button onClick={sellPlayer} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium">🔨 Sell / Confirm</button>
-                        <button onClick={markUnsold} className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg text-sm font-medium">Mark Unsold</button>
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="p-10 text-center text-gray-500 dark:text-gray-400">
-                    <div className="text-4xl mb-2">🏏</div>
-                    <p>No player currently being auctioned.</p>
-                    {user?.role === 'admin' && auction.status === 'live' && (
-                      <button onClick={nextRandomPlayer} className="mt-4 bg-purple-600 hover:bg-purple-700 text-white px-5 py-2 rounded-lg text-sm font-medium">🎲 Pick random player</button>
-                    )}
-                  </div>
+            {user?.role === 'admin' && (
+              <div className="glass p-4 flex flex-wrap gap-2">
+                {auction.status === 'draft' && <button type="button" onClick={startAuction} className="as-btn-primary text-sm">Start live</button>}
+                {auction.status === 'live' && <button type="button" onClick={pauseAuction} className="as-btn-ghost text-sm">Pause</button>}
+                {auction.status === 'paused' && <button type="button" onClick={startAuction} className="as-btn-primary text-sm">Resume</button>}
+                {(auction.status === 'live' || auction.status === 'paused') && !currentPlayer && (
+                  <button type="button" onClick={nextRandomPlayer} className="as-btn-primary text-sm">Random player</button>
                 )}
+                {unsoldPlayers.length > 0 && !currentPlayer && (
+                  <button type="button" onClick={recallUnsold} className="as-btn-ghost text-sm">Recall unsold</button>
+                )}
+                <button type="button" onClick={undoLastSell} className="as-btn-ghost text-sm">Undo last sell</button>
+                <button type="button" onClick={endAuction} className="as-btn-ghost text-sm" style={{ color: '#ff3b30' }}>End auction</button>
+                <button type="button" onClick={restartAuction} className="as-btn-ghost text-sm">Restart</button>
+                <button type="button" onClick={freshAuction} className="as-btn-ghost text-sm">Fresh auction</button>
+                <a href="/live" target="_blank" rel="noreferrer" className="as-btn-ghost text-sm">Share live</a>
               </div>
+            )}
 
-              {user?.role === 'admin' && (auction.status === 'draft' || (auction.status === 'paused' && !auction.currentPlayerId)) && (
+            {user?.role === 'admin' && auction.status === 'draft' && (
+              <div className="glass p-4">
                 <BidRulesEditor
                   initialRules={auction.bidRules || DEFAULT_BID_RULES}
                   initialTimer={auction.bidTimerSeconds}
                   initialName={auction.name}
                   onSave={saveSettings}
                 />
-              )}
-
-              {user?.role === 'admin' && (
-                <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border dark:border-gray-700 p-4 flex flex-wrap gap-2">
-                  {auction.status === 'draft' && (
-                    <button onClick={startAuction} className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-medium">▶️ Start Auction</button>
-                  )}
-                  {(auction.status === 'live' || auction.status === 'paused') && (
-                    <button onClick={pauseAuction} className="bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 rounded-lg text-sm font-medium">{auction.status === 'live' ? '⏸ Pause' : '▶️ Resume'}</button>
-                  )}
-                  {auction.status === 'live' && (
-                    <button onClick={nextRandomPlayer} className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg text-sm font-medium">🎲 Next random player</button>
-                  )}
-                  {auction.status !== 'completed' && soldList.length > 0 && (
-                    <button onClick={undoLastSell} className="bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-lg text-sm font-medium">↩ Undo last sell</button>
-                  )}
-                  {unsoldPlayers.length > 0 && (auction.status === 'live' || auction.status === 'paused' || auction.status === 'completed') && (
-                    <button onClick={recallUnsold} className="bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-lg text-sm font-medium">
-                      🔁 Recall Unsold ({unsoldPlayers.length})
-                    </button>
-                  )}
-                  {auction.status !== 'completed' && (
-                    <button onClick={endAuction} className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-medium">End Auction</button>
-                  )}
-                  {(auction.status === 'completed' || auction.status === 'draft') && (
-                    <button onClick={restartAuction} className="bg-teal-600 hover:bg-teal-700 text-white px-4 py-2 rounded-lg text-sm font-medium">🔄 Restart this auction</button>
-                  )}
-                  <button onClick={freshAuction} className="bg-slate-700 hover:bg-slate-800 text-white px-4 py-2 rounded-lg text-sm font-medium">✨ Fresh new auction</button>
-                </div>
-              )}
-
-              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border dark:border-gray-700 p-4">
-                <h3 className="font-semibold text-gray-900 dark:text-white mb-3">Sold ({soldList.length})</h3>
-                {soldList.length === 0 ? (
-                  <p className="text-sm text-gray-500 dark:text-gray-400">No players sold yet.</p>
-                ) : (
-                  <ul className="space-y-2 max-h-48 overflow-y-auto text-sm">
-                    {soldList.map(s => (
-                      <li key={s.id} className="flex justify-between text-gray-700 dark:text-gray-300">
-                        <span>{s.player?.name || s.playerId}</span>
-                        <span className="text-green-600 dark:text-green-400">₹{s.soldPrice.toLocaleString()} → {s.team?.name}</span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
               </div>
+            )}
+          </div>
+
+          <div className="space-y-3.5">
+            <div className="glass overflow-hidden">
+              <div className="px-4 pt-4 pb-2 font-semibold text-[15px]">Teams</div>
+              {teams.map(tm => {
+                const bought = soldList.filter(s => s.teamId === tm.id).length;
+                const ok = canTeamBid(tm);
+                return (
+                  <div key={tm.id} className="glass-row">
+                    <div className="min-w-0 flex-1">
+                      <div className="font-medium text-[14px] truncate">{tm.name}</div>
+                      <div className="text-[12px]" style={{ color: 'var(--text-2)' }}>
+                        ₹{tm.remainingPurse.toLocaleString()} · {bought}{tm.maxPlayers != null ? `/${tm.maxPlayers}` : ''} players
+                      </div>
+                    </div>
+                    {!ok && <span className="text-[11px]" style={{ color: '#ff3b30' }}>Full</span>}
+                  </div>
+                );
+              })}
             </div>
 
-            <div className="space-y-4">
-              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border dark:border-gray-700 p-4">
-                <h3 className="font-semibold text-gray-900 dark:text-white mb-3">Teams</h3>
-                <ul className="space-y-2 text-sm">
-                  {teams.map(t => (
-                    <li key={t.id} className="flex justify-between text-gray-700 dark:text-gray-300">
-                      <span className={t.id === auction.currentBidderTeamId ? 'font-bold text-indigo-600 dark:text-indigo-400' : ''}>
-                        {t.name}
-                        {!canTeamBid(t) && <span className="ml-1 text-[10px] text-gray-400">(out)</span>}
-                      </span>
-                      <span className="text-green-600 dark:text-green-400">₹{t.remainingPurse.toLocaleString()}</span>
-                    </li>
+            <div className="glass overflow-hidden">
+              <div className="px-4 pt-4 pb-2 font-semibold text-[15px]">Available ({availablePlayers.length})</div>
+              <ul className="max-h-48 overflow-y-auto">
+                {availablePlayers.slice(0, 40).map(pl => (
+                  <li key={pl.id} className="glass-row">
+                    <span className="flex-1 truncate text-[13px]">{pl.name}</span>
+                    {user?.role === 'admin' && !currentPlayer && (auction.status === 'live' || auction.status === 'paused') && (
+                      <button type="button" onClick={() => selectPlayer(pl.id)} className="text-[12px] font-medium" style={{ color: 'var(--accent)' }}>Select</button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <div className="glass overflow-hidden">
+              <div className="px-4 pt-4 pb-2 font-semibold text-[15px]">Sold ({soldList.length})</div>
+              <ul className="max-h-40 overflow-y-auto">
+                {soldList.slice(0, 30).map(s => (
+                  <li key={s.id} className="glass-row text-[13px]">
+                    <span className="flex-1 truncate">{s.player?.name || '—'}</span>
+                    <span style={{ color: '#30d158' }}>₹{s.soldPrice.toLocaleString()}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            {unsoldPlayers.length > 0 && (
+              <div className="glass overflow-hidden">
+                <div className="px-4 pt-4 pb-2 font-semibold text-[15px]">Unsold ({unsoldPlayers.length})</div>
+                <ul className="max-h-32 overflow-y-auto">
+                  {unsoldPlayers.slice(0, 20).map(pl => (
+                    <li key={pl.id} className="glass-row text-[13px]">{pl.name}</li>
                   ))}
                 </ul>
               </div>
-
-              {user?.role === 'admin' && auction.status === 'live' && (
-                <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border dark:border-gray-700 p-4">
-                  <h3 className="font-semibold text-gray-900 dark:text-white mb-3">Available ({availablePlayers.length})</h3>
-                  <ul className="space-y-1 max-h-96 overflow-y-auto text-sm">
-                    {availablePlayers.map(p => (
-                      <li key={p.id}>
-                        <button onClick={() => selectPlayer(p.id)} className="w-full text-left px-2 py-1.5 rounded hover:bg-blue-50 dark:hover:bg-blue-900/30 text-gray-800 dark:text-gray-200">
-                          {p.name} <span className="text-xs text-gray-500">({p.role})</span>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </div>
+            )}
           </div>
-        )}
-      </main>
-    </div>
+        </div>
+      )}
+    </AppShell>
   );
 }
