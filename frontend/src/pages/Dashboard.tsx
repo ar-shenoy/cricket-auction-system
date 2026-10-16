@@ -51,8 +51,10 @@ export default function Dashboard() {
             <span className="text-2xl">🏏</span>
             <h1 className="text-xl font-bold text-gray-900 dark:text-white">Cricket Auction</h1>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap justify-end">
             <Link to="/live" className="text-sm text-indigo-600 dark:text-indigo-400 hover:underline">Public Live</Link>
+            <Link to="/scoring" className="text-sm text-amber-600 dark:text-amber-400 hover:underline">Scoring</Link>
+            <a href="/scoreboard" target="_blank" rel="noreferrer" className="text-sm text-rose-600 dark:text-rose-400 hover:underline">Scoreboard</a>
             <Link to="/results" className="text-sm text-green-600 dark:text-green-400 hover:underline">Results</Link>
             <ThemeToggle />
             <span className="text-sm text-gray-600 dark:text-gray-300">
@@ -66,11 +68,11 @@ export default function Dashboard() {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="mb-8">
           <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Dashboard</h2>
-          <p className="text-gray-500 dark:text-gray-400 mt-1">Welcome back! Manage your auction from here.</p>
+          <p className="text-gray-500 dark:text-gray-400 mt-1">Welcome back! Manage auction and live scoring from here.</p>
         </div>
 
         {user?.role === 'admin' && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
             <Link to="/teams" className="bg-white dark:bg-gray-800 p-5 rounded-xl shadow-sm border dark:border-gray-700 hover:shadow-md transition flex flex-col items-center text-center">
               <span className="text-3xl mb-2">👥</span>
               <span className="font-semibold text-gray-800 dark:text-gray-200">Manage Teams</span>
@@ -82,6 +84,10 @@ export default function Dashboard() {
             <Link to="/auction" className="bg-white dark:bg-gray-800 p-5 rounded-xl shadow-sm border dark:border-gray-700 hover:shadow-md transition flex flex-col items-center text-center">
               <span className="text-3xl mb-2">💰</span>
               <span className="font-semibold text-gray-800 dark:text-gray-200">Live Auction</span>
+            </Link>
+            <Link to="/scoring" className="bg-white dark:bg-gray-800 p-5 rounded-xl shadow-sm border dark:border-gray-700 hover:shadow-md transition flex flex-col items-center text-center">
+              <span className="text-3xl mb-2">🏏</span>
+              <span className="font-semibold text-gray-800 dark:text-gray-200">Live Scoring</span>
             </Link>
             <Link to="/reports" className="bg-white dark:bg-gray-800 p-5 rounded-xl shadow-sm border dark:border-gray-700 hover:shadow-md transition flex flex-col items-center text-center">
               <span className="text-3xl mb-2">📊</span>
@@ -132,6 +138,7 @@ export default function Dashboard() {
             <h2 className="font-semibold text-gray-900 dark:text-white">Auction history</h2>
             <div className="flex gap-3 text-sm">
               <a href="/live" target="_blank" rel="noreferrer" className="text-indigo-600 dark:text-indigo-400 hover:underline">Open live</a>
+              <a href="/scoreboard" target="_blank" rel="noreferrer" className="text-rose-600 dark:text-rose-400 hover:underline">Scoreboard</a>
               <a href="/results" target="_blank" rel="noreferrer" className="text-green-600 dark:text-green-400 hover:underline">Public results</a>
             </div>
           </div>
