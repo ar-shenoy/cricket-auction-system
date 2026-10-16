@@ -69,7 +69,7 @@ export default function Players() {
     }
   };
 
-  useEffect(() => { loadData(); }, [filter]);
+  useEffect(() => { setSelected([]); loadData(); }, [filter]);
 
   const handleSearch = (e: React.FormEvent) => { e.preventDefault(); loadData(); };
 
@@ -121,7 +121,6 @@ export default function Players() {
     fd.append('file', file);
     try {
       const res = await api.post('/upload/image', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
-      setForm(prev => ({ ...prev, logoUrl: res.data.url } as any));
       setForm(prev => ({ ...prev, photoUrl: res.data.url }));
     } catch (err: any) {
       alert(err.response?.data?.error || 'Upload failed');
@@ -166,11 +165,35 @@ export default function Players() {
     }
   };
 
-  const pendingIds = players.filter(p => p.status === 'Pending').map(p => p.id);
-  const allPendingSelected = pendingIds.length > 0 && pendingIds.every(id => selected.includes(id));
-  const selectAllPending = () => {
-    if (allPendingSelected) setSelected(prev => prev.filter(id => !pendingIds.includes(id)));
-    else setSelected(prev => Array.from(new Set([...prev, ...pendingIds])));
+  const allIds = players.map(p => p.id);
+  const allSelected = allIds.length > 0 && allIds.every(id => selected.includes(id));
+  const toggleSelectAll = () => {
+    if (allSelected) setSelected([]);
+    else setSelected(allIds);
+  };
+  const toggleOne = (id: string) => {
+    setSelected(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
+  const selectedPendingCount = players.filter(p => selected.includes(p.id) && p.status === 'Pending').length;
+
+  const handleBulkDelete = async () => {
+    if (!selected.length) return;
+    if (!confirm(`Delete ${selected.length} selected player(s)? This cannot be undone.`)) return;
+    try {
+      await api.post('/players/bulk-delete', { ids: selected });
+      setSelected([]);
+      loadData();
+    } catch (err: any) {
+      try {
+        for (const id of selected) {
+          await api.delete(`/players/${id}`);
+        }
+        setSelected([]);
+        loadData();
+      } catch (e2: any) {
+        alert(e2.response?.data?.error || err.response?.data?.error || 'Bulk delete failed');
+      }
+    }
   };
 
   const statusStyle = (s: string): React.CSSProperties => {
@@ -205,17 +228,33 @@ export default function Players() {
             <button type="submit" className="as-btn-ghost text-sm">Search</button>
           </form>
         </div>
-        <div className="flex flex-wrap gap-2">
-          {pendingIds.length > 0 && (
-            <button type="button" onClick={selectAllPending} className="as-btn-ghost text-sm">{allPendingSelected ? 'Deselect pending' : `Select pending (${pendingIds.length})`}</button>
+        <div className="flex flex-wrap gap-2 items-center">
+          {players.length > 0 && (
+            <button type="button" onClick={toggleSelectAll} className="as-btn-ghost text-sm">
+              {allSelected ? 'Deselect all' : `Select all (${players.length})`}
+            </button>
           )}
           {selected.length > 0 && (
-            <button type="button" onClick={handleBulkApprove} className="as-btn-primary text-sm" style={{ background: '#30d158' }}>Approve ({selected.length})</button>
+            <>
+              <span className="text-[13px]" style={{ color: 'var(--text-2)' }}>{selected.length} selected</span>
+              {selectedPendingCount > 0 && (
+                <button type="button" onClick={handleBulkApprove} className="as-btn-primary text-sm" style={{ background: '#30d158' }}>
+                  Approve ({selectedPendingCount})
+                </button>
+              )}
+              <button type="button" onClick={handleBulkDelete} className="as-btn-ghost text-sm" style={{ color: '#ff3b30' }}>
+                Delete ({selected.length})
+              </button>
+              <button type="button" onClick={() => setSelected([])} className="as-btn-ghost text-sm">Clear</button>
+            </>
           )}
           {user?.role === 'admin' && (
             <>
               <button type="button" onClick={openAdd} className="as-btn-primary text-sm">+ Add</button>
-              <label className="as-btn-ghost text-sm cursor-pointer">{importing ? '…' : 'Import CSV'}<input ref={fileInputRef} type="file" accept=".csv" onChange={handleImport} className="hidden" disabled={importing} /></label>
+              <label className="as-btn-ghost text-sm cursor-pointer">
+                {importing ? '…' : 'Import CSV'}
+                <input ref={fileInputRef} type="file" accept=".csv" onChange={handleImport} className="hidden" disabled={importing} />
+              </label>
             </>
           )}
         </div>
@@ -237,14 +276,14 @@ export default function Players() {
           <table>
             <thead>
               <tr>
-                <th>{pendingIds.length > 0 && <input type="checkbox" checked={allPendingSelected} onChange={selectAllPending} />}</th>
+                <th><input type="checkbox" checked={allSelected} onChange={toggleSelectAll} title="Select all" /></th>
                 <th>Name</th><th>Role</th><th>Mobile</th><th>City</th><th>Base</th><th>Status</th><th>Actions</th>
               </tr>
             </thead>
             <tbody>
               {players.map(p => (
                 <tr key={p.id}>
-                  <td>{p.status === 'Pending' && (<input type="checkbox" checked={selected.includes(p.id)} onChange={() => setSelected(prev => prev.includes(p.id) ? prev.filter(x => x !== p.id) : [...prev, p.id])} />)}</td>
+                  <td><input type="checkbox" checked={selected.includes(p.id)} onChange={() => toggleOne(p.id)} /></td>
                   <td>
                     <div className="flex items-center gap-2 font-medium">
                       {p.photoUrl ? <img src={p.photoUrl} alt="" className="w-8 h-8 rounded-full object-cover" /> : <span className="w-8 h-8 rounded-full flex items-center justify-center text-xs" style={{ background: 'var(--fill)' }}>P</span>}
