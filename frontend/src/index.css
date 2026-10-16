@@ -23,6 +23,9 @@
   --radius-card: 22px;
   --radius-control: 14px;
   --radius-pill: 980px;
+  --text-primary: var(--text);
+  --text-secondary: var(--text-2);
+  --text-tertiary: var(--text-3);
 }
 
 html.dark {
