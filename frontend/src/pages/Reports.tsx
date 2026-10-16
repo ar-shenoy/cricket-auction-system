@@ -1,8 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
-import ThemeToggle from '../components/ThemeToggle';
+import AppShell from '../components/AppShell';
 
 interface Team {
   id: string;
@@ -33,7 +32,7 @@ interface SoldRecord {
 }
 
 export default function Reports() {
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const [teams, setTeams] = useState<Team[]>([]);
   const [sold, setSold] = useState<SoldRecord[]>([]);
   const [players, setPlayers] = useState<Player[]>([]);
@@ -52,8 +51,9 @@ export default function Reports() {
         setPlayers(playersRes.data);
         const auctions = auctionsRes.data;
         if (auctions.length > 0) {
-          const target = auctions.find((a: any) => a.status === 'live' || a.status === 'paused') ||
-                         auctions.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
+          const target =
+            auctions.find((a: any) => a.status === 'live' || a.status === 'paused') ||
+            auctions.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
           if (target) {
             const soldRes = await api.get(`/auctions/${target.id}/sold`);
             setSold(soldRes.data);
@@ -119,228 +119,209 @@ export default function Reports() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
-        <div className="text-gray-500 dark:text-gray-400">Loading reports...</div>
-      </div>
+      <AppShell title="Reports">
+        <div className="glass p-10 text-center" style={{ color: 'var(--text-2)' }}>Loading reports…</div>
+      </AppShell>
     );
   }
 
+  const tabs = [
+    { key: 'summary' as const, label: 'Summary' },
+    { key: 'sold' as const, label: `Sold (${soldCount})` },
+    { key: 'squads' as const, label: 'Team Squads' },
+    { key: 'unsold' as const, label: `Unsold (${unsoldPlayers.length})` }
+  ];
+
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors">
-      <header className="bg-white dark:bg-gray-800 shadow-sm border-b dark:border-gray-700 sticky top-0 z-10 print:shadow-none">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Link to="/" className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200">← Dashboard</Link>
-            <h1 className="text-xl font-bold text-gray-900 dark:text-white">Reports</h1>
-          </div>
-          <div className="flex items-center gap-3 print:hidden">
-            <ThemeToggle />
-            <span className="text-sm text-gray-600 dark:text-gray-300">{user?.name}</span>
-            <button onClick={logout} className="text-sm text-red-600 hover:text-red-700">Logout</button>
-          </div>
-        </div>
-      </header>
+    <AppShell title="Reports">
+      <div className="flex flex-wrap gap-2 mb-6">
+        {tabs.map(tab => (
+          <button
+            key={tab.key}
+            type="button"
+            onClick={() => setActiveTab(tab.key)}
+            className="px-4 py-2 rounded-full text-[13px] font-medium transition"
+            style={
+              activeTab === tab.key
+                ? { background: 'var(--accent)', color: '#fff' }
+                : { background: 'var(--fill)', color: 'var(--text)' }
+            }
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        <div className="flex flex-wrap gap-2 mb-6 print:hidden">
-          {[
-            { key: 'summary', label: 'Summary' },
-            { key: 'sold', label: `Sold (${soldCount})` },
-            { key: 'squads', label: 'Team Squads' },
-            { key: 'unsold', label: `Unsold (${unsoldPlayers.length})` }
-          ].map(tab => (
-            <button key={tab.key} onClick={() => setActiveTab(tab.key as any)}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
-                activeTab === tab.key ? 'bg-blue-600 text-white' : 'bg-white dark:bg-gray-800 border dark:border-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700'
-              }`}>{tab.label}</button>
-          ))}
-        </div>
-
-        {activeTab === 'summary' && (
-          <div className="space-y-6">
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-              <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 p-5 text-center">
-                <div className="text-3xl font-bold text-gray-900 dark:text-white">{soldCount}</div>
-                <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">Players Sold</div>
-              </div>
-              <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 p-5 text-center">
-                <div className="text-3xl font-bold text-green-600 dark:text-green-400">Rs {totalSpent.toLocaleString()}</div>
-                <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">Total Spent</div>
-              </div>
-              <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 p-5 text-center">
-                <div className="text-3xl font-bold text-yellow-600 dark:text-yellow-400">{unsoldPlayers.length}</div>
-                <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">Unsold</div>
-              </div>
-              <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 p-5 text-center">
-                <div className="text-3xl font-bold text-blue-600 dark:text-blue-400">{approvedLeft.length}</div>
-                <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">Still Available</div>
-              </div>
-            </div>
-            <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 p-6">
-              <h3 className="font-semibold text-gray-900 dark:text-white mb-4">Team Spend Overview</h3>
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm">
-                  <thead>
-                    <tr className="border-b dark:border-gray-700 text-gray-500 dark:text-gray-400">
-                      <th className="pb-3 font-medium">Team</th>
-                      <th className="pb-3 font-medium">Players</th>
-                      <th className="pb-3 font-medium">Spent</th>
-                      <th className="pb-3 font-medium">Remaining</th>
-                      <th className="pb-3 font-medium">Utilization</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {squads.map(sq => {
-                      const util = sq.team.purse > 0 ? Math.round((sq.spent / sq.team.purse) * 100) : 0;
-                      return (
-                        <tr key={sq.team.id} className="border-b dark:border-gray-700 last:border-0">
-                          <td className="py-3 font-medium text-gray-900 dark:text-white">
-                            <span className="inline-flex items-center gap-2">{sq.team.logoUrl && <img src={sq.team.logoUrl} alt="" className="w-6 h-6 rounded object-cover" />}{sq.team.name}</span>
-                          </td>
-                          <td className="py-3 text-gray-700 dark:text-gray-300">{sq.count}</td>
-                          <td className="py-3 text-red-600 dark:text-red-400">Rs {sq.spent.toLocaleString()}</td>
-                          <td className="py-3 text-green-600 dark:text-green-400">Rs {sq.team.remainingPurse.toLocaleString()}</td>
-                          <td className="py-3">
-                            <div className="flex items-center gap-2">
-                              <div className="w-24 bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-                                <div className="bg-blue-600 h-2 rounded-full" style={{ width: `${Math.min(util, 100)}%` }} />
-                              </div>
-                              <span className="text-xs text-gray-500 dark:text-gray-400">{util}%</span>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {activeTab === 'sold' && (
-          <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 overflow-hidden">
-            <div className="p-4 border-b dark:border-gray-700 flex flex-wrap justify-between items-center gap-2">
-              <h3 className="font-semibold text-gray-900 dark:text-white">Sold Players</h3>
-              <div className="flex gap-2 print:hidden">
-                <button onClick={exportSold} className="text-sm bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 px-3 py-1.5 rounded-lg">Export CSV</button>
-                <button type="button" onClick={() => window.print()} className="text-sm bg-gray-700 hover:bg-gray-800 text-white px-3 py-1.5 rounded-lg">Print / PDF</button>
-              </div>
-            </div>
-            {sold.length === 0 ? (
-              <div className="p-8 text-center text-gray-500 dark:text-gray-400">No players sold yet.</div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm">
-                  <thead className="bg-gray-50 dark:bg-gray-700/50 border-b dark:border-gray-700">
-                    <tr>
-                      <th className="px-4 py-3 font-medium text-gray-600 dark:text-gray-300">#</th>
-                      <th className="px-4 py-3 font-medium text-gray-600 dark:text-gray-300">Player</th>
-                      <th className="px-4 py-3 font-medium text-gray-600 dark:text-gray-300">Role</th>
-                      <th className="px-4 py-3 font-medium text-gray-600 dark:text-gray-300">Team</th>
-                      <th className="px-4 py-3 font-medium text-gray-600 dark:text-gray-300">Sold Price</th>
-                      <th className="px-4 py-3 font-medium text-gray-600 dark:text-gray-300">Time</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {sold.map((s, i) => (
-                      <tr key={s.id} className="border-b dark:border-gray-700 last:border-0 hover:bg-gray-50 dark:hover:bg-gray-700/30">
-                        <td className="px-4 py-3 text-gray-500 dark:text-gray-400">{i + 1}</td>
-                        <td className="px-4 py-3 font-medium text-gray-900 dark:text-white">
-                          <span className="inline-flex items-center gap-2">{s.player?.photoUrl && <img src={s.player.photoUrl} alt="" className="w-7 h-7 rounded-full object-cover" />}{s.player?.name || '-'}</span>
-                        </td>
-                        <td className="px-4 py-3 text-gray-700 dark:text-gray-300">{s.player?.role || '-'}</td>
-                        <td className="px-4 py-3 text-gray-700 dark:text-gray-300">
-                          <span className="inline-flex items-center gap-2">{s.team?.logoUrl && <img src={s.team.logoUrl} alt="" className="w-6 h-6 rounded object-cover" />}{s.team?.name || '-'}</span>
-                        </td>
-                        <td className="px-4 py-3 font-medium text-green-700 dark:text-green-400">Rs {s.soldPrice.toLocaleString()}</td>
-                        <td className="px-4 py-3 text-gray-500 dark:text-gray-400 text-xs">{s.soldAt ? new Date(s.soldAt).toLocaleString() : '-'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        )}
-
-        {activeTab === 'squads' && (
-          <div className="space-y-4">
-            <div className="flex justify-end print:hidden">
-              <button onClick={exportSquads} className="text-sm bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 px-3 py-1.5 rounded-lg">Export All Squads CSV</button>
-            </div>
-            {squads.map(sq => (
-              <div key={sq.team.id} className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 overflow-hidden">
-                <div className="px-4 py-3 bg-gray-50 dark:bg-gray-700/50 border-b dark:border-gray-700 flex justify-between items-center">
-                  <div className="flex items-center gap-2 min-w-0">
-                    {sq.team.logoUrl ? <img src={sq.team.logoUrl} alt="" className="w-8 h-8 rounded object-cover shrink-0" /> : <span className="text-xl">🏏</span>}
-                    <div>
-                      <span className="font-semibold text-gray-900 dark:text-white">{sq.team.name}</span>
-                      <span className="text-sm text-gray-500 dark:text-gray-400 ml-3">{sq.count} players · Spent Rs {sq.spent.toLocaleString()} · Left Rs {sq.team.remainingPurse.toLocaleString()}</span>
-                    </div>
-                  </div>
-                </div>
-                {sq.players.length === 0 ? (
-                  <div className="p-4 text-sm text-gray-500 dark:text-gray-400">No players bought yet.</div>
-                ) : (
-                  <table className="w-full text-left text-sm">
-                    <thead>
-                      <tr className="border-b dark:border-gray-700 text-gray-500 dark:text-gray-400">
-                        <th className="px-4 py-2 font-medium">Player</th>
-                        <th className="px-4 py-2 font-medium">Role</th>
-                        <th className="px-4 py-2 font-medium">Price</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {sq.players.map(p => (
-                        <tr key={p.id} className="border-b dark:border-gray-700 last:border-0">
-                          <td className="px-4 py-2 font-medium text-gray-900 dark:text-white">
-                            <span className="inline-flex items-center gap-2">{p.player?.photoUrl && <img src={p.player.photoUrl} alt="" className="w-6 h-6 rounded-full object-cover" />}{p.player?.name}</span>
-                          </td>
-                          <td className="px-4 py-2 text-gray-700 dark:text-gray-300">{p.player?.role}</td>
-                          <td className="px-4 py-2 text-green-700 dark:text-green-400">Rs {p.soldPrice.toLocaleString()}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
+      {activeTab === 'summary' && (
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {[
+              { label: 'Players Sold', v: soldCount },
+              { label: 'Total Spent', v: `₹${totalSpent.toLocaleString()}` },
+              { label: 'Unsold', v: unsoldPlayers.length },
+              { label: 'Still Available', v: approvedLeft.length }
+            ].map(c => (
+              <div key={c.label} className="glass p-5 text-center">
+                <div className="text-[28px] font-semibold" style={{ color: 'var(--text)' }}>{c.v}</div>
+                <div className="text-[13px] mt-1" style={{ color: 'var(--text-2)' }}>{c.label}</div>
               </div>
             ))}
           </div>
-        )}
+          <div className="glass overflow-hidden">
+            <div className="px-4 pt-4 pb-2 font-semibold text-[17px]">Team spend</div>
+            <table>
+              <thead>
+                <tr>
+                  <th>Team</th>
+                  <th>Players</th>
+                  <th>Spent</th>
+                  <th>Remaining</th>
+                  <th>Util%</th>
+                </tr>
+              </thead>
+              <tbody>
+                {squads.map(sq => {
+                  const util = sq.team.purse > 0 ? Math.round((sq.spent / sq.team.purse) * 100) : 0;
+                  return (
+                    <tr key={sq.team.id}>
+                      <td>
+                        <span className="inline-flex items-center gap-2 font-medium">
+                          {sq.team.logoUrl && <img src={sq.team.logoUrl} alt="" className="w-6 h-6 rounded-full object-cover" />}
+                          {sq.team.name}
+                        </span>
+                      </td>
+                      <td>{sq.count}</td>
+                      <td style={{ color: '#ff3b30' }}>₹{sq.spent.toLocaleString()}</td>
+                      <td style={{ color: '#30d158' }}>₹{sq.team.remainingPurse.toLocaleString()}</td>
+                      <td style={{ color: 'var(--text-2)' }}>{util}%</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
-        {activeTab === 'unsold' && (
-          <div className="bg-white dark:bg-gray-800 rounded-xl border dark:border-gray-700 overflow-hidden">
-            <div className="p-4 border-b dark:border-gray-700"><h3 className="font-semibold text-gray-900 dark:text-white">Unsold Players</h3></div>
-            {unsoldPlayers.length === 0 ? (
-              <div className="p-8 text-center text-gray-500 dark:text-gray-400">No unsold players.</div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm">
-                  <thead className="bg-gray-50 dark:bg-gray-700/50 border-b dark:border-gray-700">
+      {activeTab === 'sold' && (
+        <div className="glass overflow-hidden">
+          <div className="px-4 py-3 flex flex-wrap justify-between items-center gap-2">
+            <h3 className="font-semibold text-[17px]">Sold players</h3>
+            <div className="flex gap-2">
+              <button type="button" onClick={exportSold} className="as-btn-ghost text-sm !py-1.5">Export CSV</button>
+              <button type="button" onClick={() => window.print()} className="as-btn-ghost text-sm !py-1.5">Print</button>
+            </div>
+          </div>
+          {sold.length === 0 ? (
+            <div className="p-8 text-center text-[14px]" style={{ color: 'var(--text-2)' }}>No players sold yet.</div>
+          ) : (
+            <table>
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Player</th>
+                  <th>Role</th>
+                  <th>Team</th>
+                  <th>Price</th>
+                  <th>Time</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sold.map((s, i) => (
+                  <tr key={s.id}>
+                    <td style={{ color: 'var(--text-2)' }}>{i + 1}</td>
+                    <td>
+                      <span className="inline-flex items-center gap-2 font-medium">
+                        {s.player?.photoUrl && <img src={s.player.photoUrl} alt="" className="w-7 h-7 rounded-full object-cover" />}
+                        {s.player?.name || '—'}
+                      </span>
+                    </td>
+                    <td>{s.player?.role || '—'}</td>
+                    <td>{s.team?.name || '—'}</td>
+                    <td style={{ color: '#30d158' }}>₹{s.soldPrice.toLocaleString()}</td>
+                    <td className="text-[12px]" style={{ color: 'var(--text-2)' }}>
+                      {s.soldAt ? new Date(s.soldAt).toLocaleString() : '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
+
+      {activeTab === 'squads' && (
+        <div className="space-y-3">
+          <div className="flex justify-end">
+            <button type="button" onClick={exportSquads} className="as-btn-ghost text-sm">Export squads CSV</button>
+          </div>
+          {squads.map(sq => (
+            <div key={sq.team.id} className="glass overflow-hidden">
+              <div className="px-4 py-3 flex items-center gap-2" style={{ borderBottom: '0.5px solid var(--separator)' }}>
+                {sq.team.logoUrl ? <img src={sq.team.logoUrl} alt="" className="w-8 h-8 rounded-full object-cover" /> : <span>🏏</span>}
+                <div>
+                  <div className="font-semibold">{sq.team.name}</div>
+                  <div className="text-[13px]" style={{ color: 'var(--text-2)' }}>
+                    {sq.count} players · Spent ₹{sq.spent.toLocaleString()} · Left ₹{sq.team.remainingPurse.toLocaleString()}
+                  </div>
+                </div>
+              </div>
+              {sq.players.length === 0 ? (
+                <div className="p-4 text-[14px]" style={{ color: 'var(--text-2)' }}>No players bought yet.</div>
+              ) : (
+                <table>
+                  <thead>
                     <tr>
-                      <th className="px-4 py-3 font-medium text-gray-600 dark:text-gray-300">Name</th>
-                      <th className="px-4 py-3 font-medium text-gray-600 dark:text-gray-300">Role</th>
-                      <th className="px-4 py-3 font-medium text-gray-600 dark:text-gray-300">Base Price</th>
-                      <th className="px-4 py-3 font-medium text-gray-600 dark:text-gray-300">City</th>
+                      <th>Player</th>
+                      <th>Role</th>
+                      <th>Price</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {unsoldPlayers.map(p => (
-                      <tr key={p.id} className="border-b dark:border-gray-700 last:border-0 hover:bg-gray-50 dark:hover:bg-gray-700/30">
-                        <td className="px-4 py-3 font-medium text-gray-900 dark:text-white">{p.name}</td>
-                        <td className="px-4 py-3 text-gray-700 dark:text-gray-300">{p.role}</td>
-                        <td className="px-4 py-3 text-gray-700 dark:text-gray-300">Rs {(p.basePrice || 0).toLocaleString()}</td>
-                        <td className="px-4 py-3 text-gray-500 dark:text-gray-400">{p.city || '-'}</td>
+                    {sq.players.map(p => (
+                      <tr key={p.id}>
+                        <td className="font-medium">{p.player?.name}</td>
+                        <td>{p.player?.role}</td>
+                        <td style={{ color: '#30d158' }}>₹{p.soldPrice.toLocaleString()}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
-              </div>
-            )}
-          </div>
-        )}
-      </main>
-    </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {activeTab === 'unsold' && (
+        <div className="glass overflow-hidden">
+          <div className="px-4 py-3 font-semibold text-[17px]">Unsold players</div>
+          {unsoldPlayers.length === 0 ? (
+            <div className="p-8 text-center text-[14px]" style={{ color: 'var(--text-2)' }}>No unsold players.</div>
+          ) : (
+            <table>
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Role</th>
+                  <th>Base</th>
+                  <th>City</th>
+                </tr>
+              </thead>
+              <tbody>
+                {unsoldPlayers.map(p => (
+                  <tr key={p.id}>
+                    <td className="font-medium">{p.name}</td>
+                    <td>{p.role}</td>
+                    <td>₹{(p.basePrice || 0).toLocaleString()}</td>
+                    <td style={{ color: 'var(--text-2)' }}>{p.city || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
+    </AppShell>
   );
 }
