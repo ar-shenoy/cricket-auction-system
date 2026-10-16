@@ -137,7 +137,21 @@ export default function Teams() {
 
       {importResult && (
         <div className="glass p-4 mb-4 text-[14px]" style={{ color: importResult.error ? '#ff3b30' : '#30d158' }}>
-          {importResult.error || `Imported ${importResult.imported} (skipped ${importResult.skipped})`}
+          {importResult.error || (
+            <>
+              Imported {importResult.imported}, skipped {importResult.skipped}
+              {Array.isArray(importResult.errors) && importResult.errors.length > 0 && (
+                <ul className="mt-2 text-[12px] space-y-0.5" style={{ color: 'var(--text-2)' }}>
+                  {importResult.errors.slice(0, 8).map((e: any, i: number) => (
+                    <li key={i}>{e.row ? `${e.row}: ` : ''}{e.reason}</li>
+                  ))}
+                </ul>
+              )}
+              <p className="mt-2 text-[12px]" style={{ color: 'var(--text-2)' }}>
+                CSV headers: name, purse (or purse_value), max_players — optional logo_url
+              </p>
+            </>
+          )}
           <button type="button" onClick={() => setImportResult(null)} className="ml-3 underline text-[12px]">Dismiss</button>
         </div>
       )}
