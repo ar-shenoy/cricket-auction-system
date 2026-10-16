@@ -20,8 +20,8 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
-        <div className="text-gray-500 dark:text-gray-400">Loading...</div>
+      <div className="min-h-screen page-mesh flex items-center justify-center">
+        <div className="glass px-6 py-4 text-[14px]" style={{ color: 'var(--text-2)' }}>Loading…</div>
       </div>
     );
   }
