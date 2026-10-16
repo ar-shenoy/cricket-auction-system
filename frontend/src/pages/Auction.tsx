@@ -417,12 +417,32 @@ export default function Auction() {
                     </div>
                     <div className="glass p-4 space-y-2">
                       {user?.role === 'admin' && (
-                        <select value={adminBidTeamId} onChange={e => setAdminBidTeamId(e.target.value)} className="as-input text-sm">
-                          <option value="">Team to bid…</option>
-                          {eligibleTeams.map(tm => (
-                            <option key={tm.id} value={tm.id}>{tm.name} (₹{tm.remainingPurse.toLocaleString()})</option>
-                          ))}
-                        </select>
+                        <div>
+                          <div className="text-[12px] mb-1.5" style={{ color: 'var(--text-2)' }}>Bid as team</div>
+                          {eligibleTeams.length === 0 ? (
+                            <p className="text-[13px]" style={{ color: '#ff3b30' }}>No eligible teams (purse or squad full)</p>
+                          ) : (
+                            <div className="flex flex-wrap gap-2">
+                              {eligibleTeams.map(tm => {
+                                const selected = adminBidTeamId === tm.id;
+                                return (
+                                  <button
+                                    key={tm.id}
+                                    type="button"
+                                    onClick={() => setAdminBidTeamId(tm.id)}
+                                    className="px-3 py-2 rounded-2xl text-[13px] font-medium transition"
+                                    style={selected
+                                      ? { background: 'var(--accent)', color: '#fff' }
+                                      : { background: 'var(--fill)', color: 'var(--text)' }}
+                                  >
+                                    {tm.name}
+                                    <span className="opacity-80 ml-1 text-[11px]">₹{tm.remainingPurse.toLocaleString()}</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
                       )}
                       <div className="flex gap-2">
                         <input type="number" value={bidAmount} onChange={e => setBidAmount(e.target.value)} className="as-input" />
