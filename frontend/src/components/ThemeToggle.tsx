@@ -7,11 +7,10 @@ export default function ThemeToggle() {
     <button
       type="button"
       onClick={toggleTheme}
-      className="text-xs sm:text-sm px-3 py-1.5 rounded-full font-medium transition
-        text-[var(--text-secondary)] hover:text-[var(--text-primary)]
-        bg-black/5 dark:bg-white/10 hover:bg-black/10 dark:hover:bg-white/15"
+      className="glass-island"
       title={theme === 'dark' ? 'Light mode' : 'Dark mode'}
       aria-label="Toggle theme"
+      style={{ padding: '0.35rem 0.65rem', minWidth: 36 }}
     >
       {theme === 'dark' ? '☀️' : '🌙'}
     </button>
