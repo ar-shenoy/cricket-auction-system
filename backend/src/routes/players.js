@@ -69,6 +69,24 @@ router.get('/public/:id', (req, res) => {
   });
 });
 
+router.get('/stats/summary', authMiddleware, (req, res) => {
+  const players = getPlayers();
+  res.json({
+    total: players.length,
+    pending: players.filter(p => p.status === 'Pending').length,
+    approved: players.filter(p => p.status === 'Approved').length,
+    rejected: players.filter(p => p.status === 'Rejected').length,
+    sold: players.filter(p => p.status === 'Sold').length,
+    unsold: players.filter(p => p.status === 'Unsold').length,
+    byRole: {
+      Batsman: players.filter(p => p.role === 'Batsman').length,
+      Bowler: players.filter(p => p.role === 'Bowler').length,
+      'All-rounder': players.filter(p => p.role === 'All-rounder').length,
+      'Wicket-keeper': players.filter(p => p.role === 'Wicket-keeper').length
+    }
+  });
+});
+
 router.get('/:id', authMiddleware, (req, res) => {
   const players = getPlayers();
   const player = players.find(p => p.id === req.params.id);
@@ -293,24 +311,6 @@ router.delete('/:id', authMiddleware, requireRole('admin'), (req, res) => {
   data.players.splice(idx, 1);
   persist();
   res.json({ message: 'Player deleted' });
-});
-
-router.get('/stats/summary', authMiddleware, (req, res) => {
-  const players = getPlayers();
-  res.json({
-    total: players.length,
-    pending: players.filter(p => p.status === 'Pending').length,
-    approved: players.filter(p => p.status === 'Approved').length,
-    rejected: players.filter(p => p.status === 'Rejected').length,
-    sold: players.filter(p => p.status === 'Sold').length,
-    unsold: players.filter(p => p.status === 'Unsold').length,
-    byRole: {
-      Batsman: players.filter(p => p.role === 'Batsman').length,
-      Bowler: players.filter(p => p.role === 'Bowler').length,
-      'All-rounder': players.filter(p => p.role === 'All-rounder').length,
-      'Wicket-keeper': players.filter(p => p.role === 'Wicket-keeper').length
-    }
-  });
 });
 
 module.exports = router;
