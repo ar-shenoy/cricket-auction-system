@@ -11,6 +11,9 @@ const playerRoutes = require('./routes/players');
 const auctionRoutes = require('./routes/auctions');
 const uploadRoutes = require('./routes/upload');
 const matchRoutes = require('./routes/matches');
+const orgRoutes = require('./routes/orgs');
+const billingRoutes = require('./routes/billing');
+const { purgeExpiredPhotos } = require('./data/store');
 
 const app = express();
 const server = http.createServer(app);
@@ -28,6 +31,8 @@ app.use(express.urlencoded({ extended: true, limit: '2mb' }));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 app.use('/api/auth', authRoutes);
+app.use('/api/orgs', orgRoutes);
+app.use('/api/billing', billingRoutes);
 app.use('/api/teams', teamRoutes);
 app.use('/api/players', playerRoutes);
 app.use('/api/auctions', auctionRoutes);
@@ -38,7 +43,9 @@ app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',
     message: 'Cricket Auction Backend is running',
-    time: new Date().toISOString()
+    time: new Date().toISOString(),
+    saas: true,
+    storage: process.env.DATABASE_URL ? 'postgres' : 'json-file'
   });
 });
 
@@ -82,6 +89,7 @@ const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
   console.log(`\n🚀 Cricket Auction Backend running on http://localhost:${PORT}`);
   console.log(`📡 Socket.IO ready for live bidding & scoring`);
+  console.log(`🏢 SaaS multi-tenant enabled`);
   console.log(`🔑 Default Admin: admin@auction.com / admin123\n`);
 
   const keepUrl = process.env.KEEP_ALIVE_URL;
@@ -92,4 +100,16 @@ server.listen(PORT, () => {
     }, intervalMs);
     console.log(`⏱️  Keep-alive enabled → ${keepUrl} every ${intervalMs / 1000}s`);
   }
+
+  const purgeHours = Number(process.env.PHOTO_PURGE_HOURS) || 24;
+  const runPurge = () => {
+    try {
+      const n = purgeExpiredPhotos(Number(process.env.PHOTO_RETENTION_DAYS) || 15);
+      if (n > 0) console.log(`🧹 Purged ${n} expired photo/logo fields`);
+    } catch (e) {
+      console.error('Photo purge error', e.message);
+    }
+  };
+  runPurge();
+  setInterval(runPurge, purgeHours * 60 * 60 * 1000);
 });
