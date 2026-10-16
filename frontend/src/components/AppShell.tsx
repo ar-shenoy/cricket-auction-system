@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import ThemeToggle from './ThemeToggle';
 
 const nav = [
-  { to: '/', label: 'Dashboard' },
+  { to: '/', label: 'Home' },
   { to: '/players', label: 'Players' },
   { to: '/teams', label: 'Teams' },
   { to: '/auction', label: 'Auction' },
@@ -28,44 +28,56 @@ export default function AppShell({
   const loc = useLocation();
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-slate-950 text-gray-900 dark:text-white transition-colors">
-      <header className="border-b border-gray-200 dark:border-slate-800 sticky top-0 z-40 bg-white/90 dark:bg-slate-950/90 backdrop-blur">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-3">
+    <div className="min-h-screen page-mesh text-[var(--text-primary)]">
+      <header className="glass-nav sticky top-0 z-40">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
-            <Link to="/" className="flex items-center gap-2 font-bold text-lg shrink-0">
-              <span className="text-2xl">🏏</span>
+            <Link to="/" className="flex items-center gap-2 font-semibold text-[17px] tracking-tight shrink-0">
+              <span className="text-xl">🏏</span>
               <span className="hidden sm:inline">AuctionScore</span>
             </Link>
             {title && (
-              <div className="hidden md:block border-l border-gray-200 dark:border-slate-700 pl-3 min-w-0">
-                <div className="font-semibold truncate">{title}</div>
-                {subtitle && <div className="text-xs text-gray-500 dark:text-slate-400 truncate">{subtitle}</div>}
+              <div className="hidden md:block border-l border-black/10 dark:border-white/10 pl-3 min-w-0">
+                <div className="font-semibold text-[15px] truncate text-[var(--text-primary)]">{title}</div>
+                {subtitle && (
+                  <div className="text-xs truncate text-[var(--text-secondary)]">{subtitle}</div>
+                )}
               </div>
             )}
           </div>
-          <div className="flex items-center gap-2 flex-wrap justify-end">
-            <Link to="/live" className="text-xs sm:text-sm text-gray-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 px-2">Live</Link>
-            <a href="/scoreboard" target="_blank" rel="noreferrer" className="text-xs sm:text-sm text-gray-500 dark:text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 px-2">Board</a>
-            <Link to="/points" className="text-xs sm:text-sm text-gray-500 dark:text-slate-400 hover:text-purple-600 dark:hover:text-purple-400 px-2">Points</Link>
+          <div className="flex items-center gap-1 sm:gap-2 flex-wrap justify-end">
+            <Link to="/live" className="text-xs sm:text-sm px-2 py-1 rounded-full text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-black/5 dark:hover:bg-white/10">Live</Link>
+            <a href="/scoreboard" target="_blank" rel="noreferrer" className="text-xs sm:text-sm px-2 py-1 rounded-full text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-black/5 dark:hover:bg-white/10">Board</a>
+            <Link to="/points" className="text-xs sm:text-sm px-2 py-1 rounded-full text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-black/5 dark:hover:bg-white/10">Points</Link>
             <ThemeToggle />
             {user && (
-              <button type="button" onClick={logout} className="text-xs sm:text-sm text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white px-2">Logout</button>
+              <button type="button" onClick={logout} className="text-xs sm:text-sm px-2 py-1 rounded-full text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-black/5 dark:hover:bg-white/10">Logout</button>
             )}
           </div>
         </div>
-        <nav className="max-w-7xl mx-auto px-4 sm:px-6 pb-3 flex gap-1 overflow-x-auto">
+        <nav className="max-w-6xl mx-auto px-4 sm:px-6 pb-3 flex gap-1 overflow-x-auto">
           {nav.map(item => {
             const active = loc.pathname === item.to;
             return (
-              <Link key={item.to} to={item.to} className={`px-3 py-1.5 rounded-lg text-sm whitespace-nowrap transition ${
-                active ? 'bg-indigo-600 text-white font-medium' : 'text-gray-600 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-slate-800'
-              }`}>{item.label}</Link>
+              <Link
+                key={item.to}
+                to={item.to}
+                className={`px-3.5 py-1.5 rounded-full text-sm whitespace-nowrap transition font-medium ${
+                  active
+                    ? 'bg-[var(--accent)] text-white shadow-sm'
+                    : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-black/5 dark:hover:bg-white/10'
+                }`}
+              >
+                {item.label}
+              </Link>
             );
           })}
         </nav>
       </header>
-      {actions && <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-4 flex justify-end gap-2">{actions}</div>}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6">{children}</main>
+      {actions && (
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 pt-4 flex justify-end gap-2">{actions}</div>
+      )}
+      <main className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-8">{children}</main>
     </div>
   );
 }
