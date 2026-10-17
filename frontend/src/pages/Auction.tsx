@@ -285,6 +285,10 @@ export default function Auction() {
 
   const endAuction = async () => {
     if (!auction) return;
+    if (auction.status === 'completed') {
+      showMsg('info', 'Auction has already ended');
+      return;
+    }
     if (!confirm('End this auction permanently?')) return;
     try {
       const res = await api.post(`/auctions/${auction.id}/end`);
@@ -353,7 +357,6 @@ export default function Auction() {
   };
 
   const currentBidderName = teams.find(t => t.id === auction?.currentBidderTeamId)?.name || '—';
-  const myTeam = teams.find(t => t.id === user?.teamId);
 
   if (loading) {
     return (
@@ -476,7 +479,12 @@ export default function Auction() {
                   <button type="button" onClick={recallUnsold} className="as-btn-ghost text-sm">Recall unsold</button>
                 )}
                 <button type="button" onClick={undoLastSell} className="as-btn-ghost text-sm">Undo last sell</button>
-                <button type="button" onClick={endAuction} className="as-btn-ghost text-sm" style={{ color: '#ff3b30' }}>End auction</button>
+                {auction.status !== 'completed' && (
+                  <button type="button" onClick={endAuction} className="as-btn-ghost text-sm" style={{ color: '#ff3b30' }}>End auction</button>
+                )}
+                {auction.status === 'completed' && (
+                  <span className="text-[13px] px-3 py-2" style={{ color: 'var(--text-2)' }}>Auction ended</span>
+                )}
                 <button type="button" onClick={restartAuction} className="as-btn-ghost text-sm">Restart</button>
                 <button type="button" onClick={freshAuction} className="as-btn-ghost text-sm">Fresh auction</button>
                 <a href="/live" target="_blank" rel="noreferrer" className="as-btn-ghost text-sm">Share live</a>
