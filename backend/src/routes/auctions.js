@@ -393,6 +393,9 @@ router.post('/:id/undo-last-sell', authMiddleware, requireRole('admin'), (req, r
 router.post('/:id/end', authMiddleware, requireRole('admin'), (req, res) => {
   const auction = getAuctions().find(a => a.id === req.params.id);
   if (!auction) return res.status(404).json({ error: 'Auction not found' });
+  if (auction.status === 'completed') {
+    return res.status(400).json({ error: 'Auction has already ended' });
+  }
   const updated = updateAuction(auction.id, {
     status: 'completed',
     completedAt: new Date().toISOString(),
