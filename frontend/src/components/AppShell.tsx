@@ -1,16 +1,18 @@
-import React, { ReactNode } from 'react';
+import React, { ReactNode, useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import ThemeToggle from './ThemeToggle';
+import api from '../services/api';
 
-const nav = [
-  { to: '/', label: 'Home' },
-  { to: '/players', label: 'Players' },
-  { to: '/teams', label: 'Teams' },
-  { to: '/auction', label: 'Auction' },
-  { to: '/scoring', label: 'Scoring' },
-  { to: '/reports', label: 'Reports' },
-  { to: '/billing', label: 'Billing' }
+const ALL_NAV = [
+  { to: '/', label: 'Home', feature: null },
+  { to: '/players', label: 'Players', feature: 'players' },
+  { to: '/teams', label: 'Teams', feature: 'teams' },
+  { to: '/auction', label: 'Auction', feature: 'auction' },
+  { to: '/scoring', label: 'Scoring', feature: 'scoring' },
+  { to: '/reports', label: 'Reports', feature: 'reports' },
+  { to: '/billing', label: 'Billing', feature: 'billing' },
+  { to: '/features', label: 'Features', feature: null, adminOnly: true }
 ];
 
 export default function AppShell({
@@ -26,6 +28,26 @@ export default function AppShell({
 }) {
   const { user, logout } = useAuth();
   const loc = useLocation();
+  const [features, setFeatures] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    api.get('/orgs/features')
+      .then(r => setFeatures(r.data.features || {}))
+      .catch(() => {});
+  }, [loc.pathname]);
+
+  const nav = ALL_NAV.filter(item => {
+    if ((item as any).adminOnly && user?.role !== 'admin') return false;
+    if (!item.feature) return true;
+    if (features[item.feature] === false) return false;
+    return true;
+  });
+
+  const topLinks = [
+    { to: '/live', label: 'Live', feature: 'auction' },
+    { href: '/scoreboard', label: 'Board', feature: 'scoreboard' },
+    { to: '/points', label: 'Points', feature: 'points' }
+  ].filter(item => features[item.feature as string] !== false);
 
   return (
     <div className="page-mesh" style={{ color: 'var(--text)' }}>
@@ -46,12 +68,39 @@ export default function AppShell({
             )}
           </div>
           <div className="flex items-center gap-1 flex-wrap justify-end">
-            <Link to="/live" className="text-[13px] px-2.5 py-1 rounded-full" style={{ color: 'var(--text-2)' }}>Live</Link>
-            <a href="/scoreboard" target="_blank" rel="noreferrer" className="text-[13px] px-2.5 py-1 rounded-full" style={{ color: 'var(--text-2)' }}>Board</a>
-            <Link to="/points" className="text-[13px] px-2.5 py-1 rounded-full" style={{ color: 'var(--text-2)' }}>Points</Link>
+            {topLinks.map(item =>
+              (item as any).href ? (
+                <a
+                  key={item.label}
+                  href={(item as any).href}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-[13px] px-2.5 py-1 rounded-full transition"
+                  style={{ color: 'var(--text-2)' }}
+                >
+                  {item.label}
+                </a>
+              ) : (
+                <Link
+                  key={item.label}
+                  to={item.to!}
+                  className="text-[13px] px-2.5 py-1 rounded-full transition"
+                  style={{ color: 'var(--text-2)' }}
+                >
+                  {item.label}
+                </Link>
+              )
+            )}
             <ThemeToggle />
             {user && (
-              <button type="button" onClick={logout} className="text-[13px] px-2.5 py-1 rounded-full" style={{ color: 'var(--text-2)' }}>Logout</button>
+              <button
+                type="button"
+                onClick={logout}
+                className="text-[13px] px-2.5 py-1 rounded-full"
+                style={{ color: 'var(--text-2)' }}
+              >
+                Logout
+              </button>
             )}
           </div>
         </div>
@@ -75,9 +124,11 @@ export default function AppShell({
           })}
         </nav>
       </header>
+
       {actions && (
         <div className="max-w-6xl mx-auto px-4 sm:px-5 pt-4 flex justify-end gap-2">{actions}</div>
       )}
+
       <main className="max-w-6xl mx-auto px-4 sm:px-5 py-6 sm:py-8">{children}</main>
     </div>
   );
