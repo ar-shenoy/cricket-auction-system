@@ -32,7 +32,6 @@ interface SoldRow {
 export default function LiveViewer() {
   const [auction, setAuction] = useState<any>(null);
   const [current, setCurrent] = useState<Player | null>(null);
-  const [teams, setTeams] = useState<Team[]>([]);
   const [soldList, setSoldList] = useState<SoldRow[]>([]);
   const [lastBid, setLastBid] = useState<{ teamName?: string; amount?: number } | null>(null);
   const [lastSale, setLastSale] = useState<{ playerName: string; teamName: string; price: number; status: string } | null>(null);
@@ -49,13 +48,9 @@ export default function LiveViewer() {
 
   const load = useCallback(async () => {
     try {
-      const [aRes, tRes] = await Promise.all([
-        publicApi.get('/auctions/public/active').catch(() => ({ data: null })),
-        publicApi.get('/teams')
-      ]);
+      const aRes = await publicApi.get('/auctions/public/active').catch(() => ({ data: null }));
       const a = aRes.data;
       setAuction(a || null);
-      setTeams(tRes.data || []);
       if (a?.currentPlayer) {
         setCurrent(a.currentPlayer);
       } else if (a?.currentPlayerId) {
@@ -109,9 +104,16 @@ export default function LiveViewer() {
 
     socket.on('player-sold', (data: { auction: any; result: any }) => {
       if (data.auction) setAuction(data.auction);
+      const r = data.result;
+      if (r?.status === 'Undone' && r.player) {
+        setCurrent(r.player);
+        setLastBid({ amount: data.auction?.currentBid ?? r.price ?? r.player.basePrice, teamName: r.team?.name });
+        setLastSale(null);
+        if (data.auction?.id) loadSold(data.auction.id);
+        return;
+      }
       setCurrent(null);
       setLastBid(null);
-      const r = data.result;
       if (r) {
         setLastSale({
           status: r.status || 'Sold',
@@ -120,7 +122,6 @@ export default function LiveViewer() {
           price: r.price ?? r.sold?.soldPrice ?? 0
         });
         if (data.auction?.id) loadSold(data.auction.id);
-        publicApi.get('/teams').then(res => setTeams(res.data || [])).catch(() => {});
       }
     });
 
@@ -221,27 +222,6 @@ export default function LiveViewer() {
             Waiting for next player…
           </div>
         )}
-
-        <div className="glass rounded-[22px] p-5">
-          <h3 className="font-semibold mb-4 text-[var(--text-primary)]">Team purses</h3>
-          <div className="grid sm:grid-cols-2 gap-3">
-            {teams.map(t => (
-              <div key={t.id} className="flex items-center gap-3 rounded-2xl px-3 py-2.5 bg-black/5 dark:bg-white/5">
-                {t.logoUrl ? (
-                  <img src={t.logoUrl} alt="" className="w-10 h-10 rounded-full object-cover" />
-                ) : (
-                  <span className="w-10 h-10 rounded-full bg-black/5 dark:bg-white/10 flex items-center justify-center">🏏</span>
-                )}
-                <div className="min-w-0 flex-1">
-                  <div className="font-medium truncate text-[var(--text-primary)]">{t.name}</div>
-                  <div className="text-sm text-emerald-600 dark:text-emerald-400 tabular-nums">
-                    ₹{Number(t.remainingPurse ?? t.purse ?? 0).toLocaleString()}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
 
         {soldList.length > 0 && (
           <div className="glass rounded-[22px] p-5">
