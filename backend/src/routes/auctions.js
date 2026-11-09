@@ -370,7 +370,11 @@ router.post('/:id/undo-last-sell', authMiddleware, requireRole('admin'), (req, r
   if (soldList.length === 0) {
     return res.status(400).json({ error: 'No sold players to undo' });
   }
-  soldList.sort((a, b) => new Date(b.soldAt) - new Date(a.soldAt));
+  soldList.sort((a, b) => {
+    const ta = new Date(a.soldAt || 0).getTime();
+    const tb = new Date(b.soldAt || 0).getTime();
+    return tb - ta;
+  });
   const last = soldList[0];
   const data = getData();
   const soldIdx = data.soldPlayers.findIndex(s => s.id === last.id);
@@ -380,14 +384,26 @@ router.post('/:id/undo-last-sell', authMiddleware, requireRole('admin'), (req, r
   if (team) {
     updateTeam(team.id, { remainingPurse: team.remainingPurse + last.soldPrice });
   }
-  updatePlayer(last.playerId, { status: 'Approved' });
+
+  // Remove sold record, mark Approved (available again — NOT Unsold)
   data.soldPlayers.splice(soldIdx, 1);
+  const updatedPlayer = updatePlayer(last.playerId, { status: 'Approved' });
   persist();
 
-  const player = getPlayers().find(p => p.id === last.playerId);
+  const player = updatedPlayer || getPlayers().find(p => p.id === last.playerId);
+  // Put player back on the block for re-auction
+  const updatedAuction = updateAuction(auction.id, {
+    currentPlayerId: last.playerId,
+    currentBid: (player && player.basePrice) || 0,
+    currentBidderTeamId: null,
+    timerEndsAt: null,
+    status: auction.status === 'draft' ? 'live' : auction.status
+  });
+
   const result = { status: 'Undone', player, team, price: last.soldPrice };
-  emitAuction(req.app.get('io'), auction.id, 'player-sold', { auction, result });
-  res.json({ message: 'Last sale undone', result });
+  emitAuction(req.app.get('io'), auction.id, 'player-sold', { auction: updatedAuction, result });
+  emitAuction(req.app.get('io'), auction.id, 'player-selected', { auction: updatedAuction, player });
+  res.json({ message: 'Last sale undone — player is available again', auction: updatedAuction, result, player });
 });
 
 router.post('/:id/end', authMiddleware, requireRole('admin'), (req, res) => {
