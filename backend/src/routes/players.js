@@ -223,24 +223,38 @@ router.post('/import', authMiddleware, requireRole('admin'), upload.single('file
 
   fs.createReadStream(req.file.path)
     .pipe(csv({
-      mapHeaders: ({ header }) => header.trim().toLowerCase().replace(/\s+/g, '_')
+      mapHeaders: ({ header }) =>
+        String(header || '')
+          .replace(/^\uFEFF/, '')
+          .trim()
+          .toLowerCase()
+          .replace(/\s+/g, '_')
+          .replace(/[^a-z0-9_]/g, '_')
     }))
     .on('data', (row) => {
       try {
-        const name = row.name || row.full_name || row.player_name || row['full name'] || '';
-        const mobile = row.mobile || row.mobile_number || row.phone || row['mobile number'] || '';
+        const name = row.name || row.full_name || row.player_name || row.player || '';
+        const mobile = row.mobile || row.mobile_number || row.phone || row.phone_number || '';
         const email = row.email || row.email_address || '';
-        const role = (row.role || row.playing_role || row['playing role'] || 'All-rounder').trim();
-        const battingStyle = row.batting_style || row.batting || row['batting style'] || '';
-        const bowlingStyle = row.bowling_style || row.bowling || row['bowling style'] || '';
+        const role = (row.role || row.playing_role || row.player_role || 'All-rounder').trim();
+        const battingStyle = row.batting_style || row.batting || '';
+        const bowlingStyle = row.bowling_style || row.bowling || '';
         const age = row.age || row.dob || '';
         const city = row.city || row.location || row.state || '';
-        const bio = row.bio || row.experience || row['experience / bio'] || row.comments || '';
-        const basePrice = row.base_price || row.baseprice || row['base price'] || 0;
-        const photoUrl = row.photo || row.photo_url || row['photo url'] || '';
+        const bio =
+          row.bio ||
+          row.short_bio ||
+          row.shortbio ||
+          row.experience ||
+          row.comments ||
+          row.description ||
+          '';
+        const basePriceRaw = row.base_price || row.baseprice || row.base || row.price || 0;
+        const basePrice = Number(String(basePriceRaw).replace(/[₹$,\s]/g, '')) || 0;
+        const photoUrl = row.photo || row.photo_url || row.image || row.image_url || '';
 
         if (!name || name.trim().length < 2) {
-          errors.push({ row, reason: 'Missing or invalid name' });
+          errors.push({ reason: 'Missing or invalid name' });
           skipped++;
           return;
         }
@@ -253,16 +267,17 @@ router.post('/import', authMiddleware, requireRole('admin'), upload.single('file
         else if (r.includes('all')) normalizedRole = 'All-rounder';
 
         const players = getPlayers();
-        if (mobile && players.find(p => p.mobile === String(mobile).trim())) {
+        const mobileNorm = String(mobile).trim();
+        if (mobileNorm && players.find(p => p.mobile === mobileNorm)) {
           skipped++;
-          errors.push({ name, reason: 'Duplicate mobile number' });
+          errors.push({ name: name.trim(), reason: 'Duplicate mobile number' });
           return;
         }
 
         addPlayer({
           id: uuidv4(),
           name: name.trim(),
-          mobile: String(mobile).trim(),
+          mobile: mobileNorm,
           email: String(email).trim(),
           role: normalizedRole,
           battingStyle: String(battingStyle).trim(),
@@ -270,7 +285,7 @@ router.post('/import', authMiddleware, requireRole('admin'), upload.single('file
           age: age ? Number(age) || null : null,
           city: String(city).trim(),
           bio: String(bio).trim(),
-          basePrice: Number(basePrice) || 0,
+          basePrice,
           status: 'Pending',
           photoUrl: String(photoUrl).trim(),
           createdAt: new Date().toISOString(),
@@ -279,7 +294,7 @@ router.post('/import', authMiddleware, requireRole('admin'), upload.single('file
 
         imported++;
       } catch (err) {
-        errors.push({ row, reason: err.message });
+        errors.push({ reason: err.message });
         skipped++;
       }
     })
