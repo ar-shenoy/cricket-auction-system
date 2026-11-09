@@ -48,4 +48,20 @@ function canUse(org, feature) {
   return !!plan.limits[feature];
 }
 
-module.exports = { PLANS, getPlan, canUse };
+const DEFAULT_FEATURES = {
+  players: true,
+  teams: true,
+  auction: true,
+  scoring: true,
+  reports: true,
+  billing: true,
+  liveTeams: false,
+  points: true,
+  scoreboard: true
+};
+
+function getFeatures(org) {
+  return { ...DEFAULT_FEATURES, ...(org && org.features ? org.features : {}) };
+}
+
+module.exports = { PLANS, getPlan, canUse, DEFAULT_FEATURES, getFeatures };
