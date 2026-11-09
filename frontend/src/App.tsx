@@ -15,6 +15,7 @@ import PointsTable from './pages/PointsTable';
 import Landing from './pages/Landing';
 import RegisterOrg from './pages/RegisterOrg';
 import Billing from './pages/Billing';
+import Features from './pages/Features';
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
@@ -48,6 +49,7 @@ export default function App() {
         <Route path="/reports" element={<PrivateRoute><Reports /></PrivateRoute>} />
         <Route path="/scoring" element={<PrivateRoute><Scoring /></PrivateRoute>} />
         <Route path="/billing" element={<PrivateRoute><Billing /></PrivateRoute>} />
+        <Route path="/features" element={<PrivateRoute><Features /></PrivateRoute>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
