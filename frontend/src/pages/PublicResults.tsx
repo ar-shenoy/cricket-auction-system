@@ -64,26 +64,6 @@ export default function PublicResults() {
     load();
   }, []);
 
-  const exportCsv = () => {
-    const rows = [['Player', 'Role', 'Team', 'Sold Price']];
-    sold.forEach(s => {
-      rows.push([
-        s.player?.name || s.playerId,
-        s.player?.role || '',
-        s.team?.name || s.teamId,
-        String(s.soldPrice)
-      ]);
-    });
-    const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'auction-results.csv';
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-transparent">
@@ -103,8 +83,6 @@ export default function PublicResults() {
           <div className="flex items-center gap-2 print:hidden">
             <ThemeToggle />
             <Link to="/live" className="text-sm text-indigo-400">Live</Link>
-            <button onClick={exportCsv} className="text-sm bg-green-600 text-[var(--text-primary)] px-3 py-1.5 rounded-lg">Export CSV</button>
-            <button onClick={() => window.print()} className="text-sm bg-gray-700 text-[var(--text-primary)] px-3 py-1.5 rounded-lg">Print / PDF</button>
           </div>
         </div>
       </header>
