@@ -17,7 +17,7 @@ const {
 } = require('../data/store');
 const { authMiddleware, requireRole, JWT_SECRET } = require('../middleware/auth');
 const { tenantMiddleware } = require('../middleware/tenant');
-const { PLANS, getPlan } = require('../config/plans');
+const { PLANS, getPlan, DEFAULT_FEATURES, getFeatures } = require('../config/plans');
 
 const router = express.Router();
 
@@ -117,7 +117,8 @@ function publicOrg(org) {
     plan: org.plan || 'free',
     planExpiresAt: org.planExpiresAt || null,
     limits: plan.limits,
-    planName: plan.name
+    planName: plan.name,
+    features: getFeatures(org)
   };
 }
 
@@ -150,6 +151,33 @@ router.get('/public/:slug', (req, res) => {
     slug: org.slug,
     plan: org.plan || 'free'
   });
+});
+
+/** Feature flags (admin / super admin) */
+router.get('/features', authMiddleware, tenantMiddleware, (req, res) => {
+  res.json({ features: getFeatures(req.org), defaults: DEFAULT_FEATURES });
+});
+
+router.put('/features', authMiddleware, requireRole('admin'), tenantMiddleware, (req, res) => {
+  const incoming = req.body?.features && typeof req.body.features === 'object' ? req.body.features : {};
+  const merged = { ...getFeatures(req.org) };
+  Object.keys(DEFAULT_FEATURES).forEach(k => {
+    if (typeof incoming[k] === 'boolean') merged[k] = incoming[k];
+  });
+  const updated = updateOrganization(req.orgId, { features: merged });
+  res.json({ features: getFeatures(updated), message: 'Features updated' });
+});
+
+/** Public features for live/results pages */
+router.get('/public-features', (req, res) => {
+  const orgId = req.query.orgId || req.headers['x-org-id'];
+  let org = null;
+  if (orgId) org = getOrgById(orgId);
+  if (!org) {
+    const all = getOrganizations();
+    org = all[0] || null;
+  }
+  res.json({ features: getFeatures(org) });
 });
 
 module.exports = router;
