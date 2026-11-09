@@ -103,10 +103,10 @@ router.post('/', authMiddleware, requireRole('admin'), async (req, res) => {
 /**
  * CSV import — flexible headers (case-insensitive, spaces → underscores):
  *   name | team_name | team
- *   purse | purse_value | budget | total_purse | purse_amount
+ *   purse | purse_value | total_purse_value | budget | total_purse | purse_amount
  *   max_players | maxplayers | squad_size | max_player
  *   logo_url | logo | image (optional)
- *   manager_name, manager_email, manager_password (optional)
+ *   manager_name | owner_name, manager_email | email, manager_password | password (optional)
  */
 router.post('/import', authMiddleware, requireRole('admin'), upload.single('file'), async (req, res) => {
   if (!req.file) {
@@ -141,10 +141,13 @@ router.post('/import', authMiddleware, requireRole('admin'), upload.single('file
 
   for (const row of rows) {
     try {
-      const name = pick(row, ['name', 'team_name', 'team', 'teamname', 'franchise', 'franchise_name']);
+      const name = pick(row, [
+        'name', 'team_name', 'team', 'teamname', 'franchise', 'franchise_name', 'team_name_'
+      ]);
       const purseRaw = pick(row, [
-        'purse', 'purse_value', 'budget', 'total_purse', 'purse_amount',
-        'total_budget', 'wallet', 'amount', 'purse_rs', 'purse_inr'
+        'purse', 'purse_value', 'total_purse_value', 'total_purse', 'purse_amount',
+        'budget', 'total_budget', 'wallet', 'amount', 'purse_rs', 'purse_inr',
+        'pursevalue', 'totalpurse', 'totalpursevalue'
       ]);
       // Strip currency symbols / commas: "₹1,00,00,000" or "10000000"
       const purse = Number(String(purseRaw).replace(/[₹$,\s]/g, '').replace(/inr/gi, ''));
@@ -153,10 +156,16 @@ router.post('/import', authMiddleware, requireRole('admin'), upload.single('file
         'max_squad', 'squad', 'players_limit', 'player_limit'
       ]);
       const maxPlayers = maxPlayersRaw !== '' ? Number(maxPlayersRaw) : null;
-      const managerName = pick(row, ['manager_name', 'manager', 'owner']);
-      const managerEmail = pick(row, ['manager_email', 'email', 'manager_mail']);
-      const managerPassword = pick(row, ['manager_password', 'password', 'manager_pass']);
-      const logoUrl = pick(row, ['logo_url', 'logo', 'image', 'photo', 'photo_url']);
+      const managerName = pick(row, [
+        'manager_name', 'manager', 'owner', 'owner_name', 'ownername', 'managername'
+      ]);
+      const managerEmail = pick(row, [
+        'manager_email', 'email', 'manager_mail', 'owner_email', 'manageremail'
+      ]);
+      const managerPassword = pick(row, [
+        'manager_password', 'password', 'manager_pass', 'owner_password', 'managerpassword'
+      ]);
+      const logoUrl = pick(row, ['logo_url', 'logo', 'image', 'photo', 'photo_url', 'logourl']);
 
       if (!name) {
         skipped++;
@@ -167,7 +176,7 @@ router.post('/import', authMiddleware, requireRole('admin'), upload.single('file
         skipped++;
         errors.push({
           row: name,
-          reason: `Invalid or missing purse (got "${purseRaw || ''}"). Use a column like purse / purse_value / budget.`
+          reason: `Invalid or missing purse (got "${purseRaw || ''}"). Use purse / purse_value / total_purse_value / budget.`
         });
         continue;
       }
