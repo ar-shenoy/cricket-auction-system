@@ -116,14 +116,20 @@ export default function Auction() {
     });
     socket.on('player-sold', (data: { auction: Auction; result: any }) => {
       setAuction(data.auction);
-      setCurrentPlayer(null);
+      const isUndone = data.result?.status === 'Undone';
+      if (isUndone && data.result?.player) {
+        setCurrentPlayer(data.result.player);
+        setBidAmount(String(nextMinBid(data.auction?.currentBid || data.result.player.basePrice || 0, false, data.auction)));
+      } else {
+        setCurrentPlayer(null);
+      }
       setMessage({
-        type: data.result.status === 'Sold' ? 'success' : 'info',
-        text: data.result.status === 'Sold'
+        type: data.result?.status === 'Sold' ? 'success' : 'info',
+        text: data.result?.status === 'Sold'
           ? `SOLD! ${data.result.player?.name} to ${data.result.team?.name} for ₹${data.result.price?.toLocaleString()}`
-          : data.result.status === 'Undone'
-            ? `Undone: ${data.result.player?.name}`
-            : `UNSOLD: ${data.result.player?.name}`
+          : isUndone
+            ? `Undone: ${data.result.player?.name} is available again`
+            : `UNSOLD: ${data.result?.player?.name}`
       });
       if (auction.id) {
         api.get(`/auctions/${auction.id}/sold`).then(r => setSoldList(r.data));
@@ -273,11 +279,29 @@ export default function Auction() {
 
   const undoLastSell = async () => {
     if (!auction) return;
-    if (!confirm('Undo the last sold player?')) return;
+    if (!confirm('Undo the last sold player? They will return to available (not unsold).')) return;
     try {
-      await api.post(`/auctions/${auction.id}/undo-last-sell`);
-      showMsg('info', 'Last sale undone');
-      loadAuction();
+      const res = await api.post(`/auctions/${auction.id}/undo-last-sell`);
+      const player = res.data?.player || res.data?.result?.player;
+      const updatedAuction = res.data?.auction;
+      if (updatedAuction) setAuction(updatedAuction);
+      if (player) {
+        setCurrentPlayer(player);
+        setBidAmount(String(nextMinBid(updatedAuction?.currentBid || player.basePrice || 0, false, updatedAuction || auction)));
+      }
+      showMsg('info', player ? `Undone: ${player.name} is available again` : 'Last sale undone — player available again');
+      if (auction.id) {
+        const [soldRes, availRes, unsoldRes, teamsRes] = await Promise.all([
+          api.get(`/auctions/${auction.id}/sold`),
+          api.get(`/auctions/${auction.id}/available-players`),
+          api.get(`/auctions/${auction.id}/unsold-players`).catch(() => ({ data: [] })),
+          api.get('/teams')
+        ]);
+        setSoldList(soldRes.data);
+        setAvailablePlayers(availRes.data);
+        setUnsoldPlayers(unsoldRes.data || []);
+        setTeams(teamsRes.data);
+      }
     } catch (err: any) {
       showMsg('error', err.response?.data?.error || 'Undo failed');
     }
