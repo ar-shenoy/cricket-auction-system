@@ -12,7 +12,7 @@ const ALL_NAV = [
   { to: '/scoring', label: 'Scoring', feature: 'scoring' },
   { to: '/reports', label: 'Reports', feature: 'reports' },
   { to: '/billing', label: 'Billing', feature: 'billing' },
-  { to: '/features', label: 'Features', feature: null, adminOnly: true }
+  { to: '/features', label: 'Features', feature: null, developerOnly: true }
 ];
 
 export default function AppShell({
@@ -38,6 +38,7 @@ export default function AppShell({
 
   const nav = ALL_NAV.filter(item => {
     if ((item as any).adminOnly && user?.role !== 'admin') return false;
+    if ((item as any).developerOnly && user?.role !== 'developer') return false;
     if (!item.feature) return true;
     if (features[item.feature] === false) return false;
     return true;
@@ -45,6 +46,7 @@ export default function AppShell({
 
   const topLinks = [
     { to: '/live', label: 'Live', feature: 'auction' },
+    { to: '/results', label: 'Results', feature: 'auction' },
     { href: '/scoreboard', label: 'Board', feature: 'scoreboard' },
     { to: '/points', label: 'Points', feature: 'points' }
   ].filter(item => features[item.feature as string] !== false);
