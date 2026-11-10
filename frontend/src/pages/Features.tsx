@@ -47,16 +47,19 @@ export default function Features() {
     }
   };
 
-  if (user?.role !== 'admin') {
+  if (user?.role !== 'developer') {
     return (
       <AppShell title="Features">
-        <div className="glass p-8 text-center" style={{ color: 'var(--text-2)' }}>Admin only</div>
+        <div className="glass p-8 text-center space-y-2" style={{ color: 'var(--text-2)' }}>
+          <div className="font-medium" style={{ color: 'var(--text)' }}>Developer login required</div>
+          <p className="text-[13px]">Feature toggles are only available to the platform developer account — not league admins.</p>
+        </div>
       </AppShell>
     );
   }
 
   return (
-    <AppShell title="Feature toggles" subtitle="Turn modules on or off for this organisation">
+    <AppShell title="Feature toggles" subtitle="Platform developer — control modules for this organisation">
       {loading ? (
         <div className="glass p-8 text-center" style={{ color: 'var(--text-2)' }}>Loading…</div>
       ) : (
