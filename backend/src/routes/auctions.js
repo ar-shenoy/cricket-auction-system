@@ -63,8 +63,7 @@ router.get('/', authMiddleware, (req, res) => {
 
 router.get('/active', authMiddleware, (req, res) => {
   const auctions = getAuctions();
-  const active = auctions.find(a => a.status === 'live' || a.status === 'paused' || a.status === 'draft') ||
-                 auctions.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0] || null;
+  const active = auctions.find(a => a.status === 'live' || a.status === 'paused' || a.status === 'draft') || null;
   res.json(active);
 });
 
@@ -133,7 +132,7 @@ router.post('/:id/start', authMiddleware, requireRole('admin'), (req, res) => {
   const auction = getAuctions().find(a => a.id === req.params.id);
   if (!auction) return res.status(404).json({ error: 'Auction not found' });
   if (auction.status === 'live') return res.status(400).json({ error: 'Already live' });
-  if (auction.status === 'completed') return res.status(400).json({ error: 'Auction already completed. Use Restart or Recall Unsold.' });
+  if (auction.status === 'completed') return res.status(400).json({ error: 'Auction already completed. Use Restart or create a new auction.' });
   const updated = updateAuction(auction.id, { status: 'live', startedAt: new Date().toISOString(), timerEndsAt: null });
   emitAuction(req.app.get('io'), auction.id, 'auction-started', updated);
   res.json(updated);
@@ -239,18 +238,6 @@ router.post('/:id/bid', authMiddleware, (req, res) => {
       });
     }
   }
-  if (team.roleCaps && typeof team.roleCaps === 'object') {
-    const player = getPlayers().find(p => p.id === auction.currentPlayerId);
-    if (player && team.roleCaps[player.role] != null) {
-      const roleCount = soldForTeam.filter(s => {
-        const pl = getPlayers().find(p => p.id === s.playerId);
-        return pl && pl.role === player.role;
-      }).length;
-      if (roleCount >= Number(team.roleCaps[player.role])) {
-        return res.status(400).json({ error: `Team has reached max ${player.role}s (${team.roleCaps[player.role]})` });
-      }
-    }
-  }
   const bid = addBid({
     id: uuidv4(),
     auctionId: auction.id,
@@ -354,7 +341,7 @@ router.post('/:id/undo-last-sell', authMiddleware, requireRole('admin'), (req, r
   });
   const result = { status: 'Undone', player, team: team || null, price: restoredBid, restoredBid };
   emitAuction(req.app.get('io'), auction.id, 'player-sold', { auction: updatedAuction, result });
-  res.json({ message: 'Last sale undone — player back at last sold price', auction: updatedAuction, result, player });
+  res.json({ message: 'Last sale undone', auction: updatedAuction, result, player });
 });
 
 router.post('/:id/end', authMiddleware, requireRole('admin'), (req, res) => {
