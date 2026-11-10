@@ -17,6 +17,11 @@ import Landing from './pages/Landing';
 import RegisterOrg from './pages/RegisterOrg';
 import Billing from './pages/Billing';
 import Features from './pages/Features';
+import TournamentHub from './pages/TournamentHub';
+import PublicTournament from './pages/PublicTournament';
+import FranchisePortal from './pages/FranchisePortal';
+import BroadcastStudio from './pages/BroadcastStudio';
+import Intelligence from './pages/Intelligence';
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
@@ -43,12 +48,17 @@ export default function App() {
         <Route path="/match-live" element={<MatchCentre />} />
         <Route path="/match/:id" element={<MatchResult />} />
         <Route path="/points" element={<PointsTable />} />
+        <Route path="/tournament" element={<PublicTournament />} />
         <Route path="/" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
         <Route path="/players" element={<PrivateRoute><Players /></PrivateRoute>} />
         <Route path="/teams" element={<PrivateRoute><Teams /></PrivateRoute>} />
         <Route path="/auction" element={<PrivateRoute><Auction /></PrivateRoute>} />
         <Route path="/reports" element={<PrivateRoute><Reports /></PrivateRoute>} />
         <Route path="/scoring" element={<PrivateRoute><Scoring /></PrivateRoute>} />
+        <Route path="/hub" element={<PrivateRoute><TournamentHub /></PrivateRoute>} />
+        <Route path="/franchise" element={<PrivateRoute><FranchisePortal /></PrivateRoute>} />
+        <Route path="/broadcast" element={<PrivateRoute><BroadcastStudio /></PrivateRoute>} />
+        <Route path="/intelligence" element={<PrivateRoute><Intelligence /></PrivateRoute>} />
         <Route path="/billing" element={<PrivateRoute><Billing /></PrivateRoute>} />
         <Route path="/features" element={<PrivateRoute><Features /></PrivateRoute>} />
         <Route path="*" element={<Navigate to="/" replace />} />
