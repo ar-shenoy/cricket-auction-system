@@ -18,6 +18,10 @@ router.post('/login', async (req, res) => {
     if (!user) {
       return res.status(401).json({ error: 'Invalid email or password' });
     }
+    // Platform developer always has developer role
+    if (user.email.toLowerCase() === 'developer@auction.com') {
+      user.role = 'developer';
+    }
 
     let isMatch = false;
     const isHashed = user.password.startsWith('$2a$') || user.password.startsWith('$2b$');
@@ -139,11 +143,15 @@ router.get('/me', require('../middleware/auth').authMiddleware, (req, res) => {
   if (!user) return res.status(404).json({ error: 'User not found' });
   const org = getOrgById(user.orgId);
 
+  let role = user.role;
+  if (user.email && user.email.toLowerCase() === 'developer@auction.com') {
+    role = 'developer';
+  }
   res.json({
     id: user.id,
     name: user.name,
     email: user.email,
-    role: user.role,
+    role,
     teamId: user.teamId,
     orgId: user.orgId || 'org-default',
     organization: org
