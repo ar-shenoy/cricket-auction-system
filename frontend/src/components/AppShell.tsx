@@ -1,10 +1,10 @@
-import React, { ReactNode, useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import ThemeToggle from './ThemeToggle';
 import api from '../services/api';
+import ThemeToggle from './ThemeToggle';
 
-const ALL_NAV = [
+const ALL_NAV: { to: string; label: string; feature: string | null; adminOnly?: boolean; developerOnly?: boolean }[] = [
   { to: '/', label: 'Home', feature: null },
   { to: '/players', label: 'Players', feature: 'players' },
   { to: '/teams', label: 'Teams', feature: 'teams' },
@@ -16,25 +16,23 @@ const ALL_NAV = [
 ];
 
 export default function AppShell({
-  children,
   title,
   subtitle,
-  actions
+  actions,
+  children
 }: {
-  children: ReactNode;
   title?: string;
   subtitle?: string;
-  actions?: ReactNode;
+  actions?: React.ReactNode;
+  children: React.ReactNode;
 }) {
   const { user, logout } = useAuth();
   const loc = useLocation();
   const [features, setFeatures] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
-    api.get('/orgs/features')
-      .then(r => setFeatures(r.data.features || {}))
-      .catch(() => {});
-  }, [loc.pathname]);
+    api.get('/orgs/features').then(r => setFeatures(r.data.features || {})).catch(() => {});
+  }, []);
 
   const nav = ALL_NAV.filter(item => {
     if ((item as any).adminOnly && user?.role !== 'admin') return false;
@@ -48,7 +46,8 @@ export default function AppShell({
     { to: '/live', label: 'Live', feature: 'auction' },
     { to: '/results', label: 'Results', feature: 'auction' },
     { href: '/scoreboard', label: 'Board', feature: 'scoreboard' },
-    { to: '/points', label: 'Points', feature: 'points' }
+    { to: '/points', label: 'Points', feature: 'points' },
+    { href: '/match-live', label: 'Match centre', feature: 'scoreboard' }
   ].filter(item => features[item.feature as string] !== false);
 
   return (
