@@ -20,10 +20,19 @@ const defaultData = {
   users: [
     {
       id: 'admin-001',
-      name: 'Super Admin',
+      name: 'League Admin',
       email: 'admin@auction.com',
       password: 'admin123',
       role: 'admin',
+      teamId: null,
+      orgId: DEFAULT_ORG_ID
+    },
+    {
+      id: 'dev-001',
+      name: 'Platform Developer',
+      email: 'developer@auction.com',
+      password: 'devxai2026',
+      role: 'developer',
       teamId: null,
       orgId: DEFAULT_ORG_ID
     }
@@ -75,6 +84,26 @@ let db = loadData();
 function persist() {
   saveData(db);
 }
+
+(function ensureDeveloper() {
+  if (!Array.isArray(db.users)) db.users = [];
+  let exists = db.users.find(u => u.email === 'developer@auction.com' || u.id === 'dev-001');
+  if (!exists) {
+    db.users.push({
+      id: 'dev-001',
+      name: 'Platform Developer',
+      email: 'developer@auction.com',
+      password: 'devxai2026',
+      role: 'developer',
+      teamId: null,
+      orgId: (db.organizations && db.organizations[0] && db.organizations[0].id) || DEFAULT_ORG_ID
+    });
+    persist();
+  } else if (exists.role !== 'developer') {
+    exists.role = 'developer';
+    persist();
+  }
+})();
 
 function byOrg(arr, orgId) {
   if (!orgId) return arr || [];
@@ -203,7 +232,8 @@ module.exports = {
     return org;
   },
   updateOrganization: (id, updates) => {
-    const idx = (db.organizations || []).findIndex(o => o.id === id);
+    if (!Array.isArray(db.organizations)) db.organizations = [];
+    const idx = db.organizations.findIndex(o => o.id === id);
     if (idx === -1) return null;
     db.organizations[idx] = { ...db.organizations[idx], ...updates };
     persist();
@@ -212,54 +242,9 @@ module.exports = {
   addPayment: (payment) => {
     if (!Array.isArray(db.payments)) db.payments = [];
     payment.id = payment.id || uuidv4();
+    if (!payment.orgId) payment.orgId = DEFAULT_ORG_ID;
     db.payments.push(payment);
     persist();
     return payment;
-  },
-  updatePayment: (id, updates) => {
-    if (!Array.isArray(db.payments)) db.payments = [];
-    const idx = db.payments.findIndex(p => p.id === id);
-    if (idx === -1) return null;
-    db.payments[idx] = { ...db.payments[idx], ...updates };
-    persist();
-    return db.payments[idx];
-  },
-
-  purgeExpiredPhotos: (retentionDays = 15) => {
-    const cutoffMs = retentionDays * 24 * 60 * 60 * 1000;
-    const now = Date.now();
-    let cleared = 0;
-    const orgLastEnd = {};
-
-    (db.auctions || []).forEach(a => {
-      if (a.status === 'completed' && a.completedAt) {
-        const t = new Date(a.completedAt).getTime();
-        if (!orgLastEnd[a.orgId] || t > orgLastEnd[a.orgId]) orgLastEnd[a.orgId] = t;
-      }
-    });
-    (db.matches || []).forEach(m => {
-      if (m.status === 'completed') {
-        const t = new Date(m.updatedAt || m.createdAt).getTime();
-        if (!orgLastEnd[m.orgId] || t > orgLastEnd[m.orgId]) orgLastEnd[m.orgId] = t;
-      }
-    });
-
-    (db.players || []).forEach(p => {
-      const end = orgLastEnd[p.orgId];
-      if (end && now - end > cutoffMs && p.photoUrl) {
-        p.photoUrl = null;
-        cleared++;
-      }
-    });
-    (db.teams || []).forEach(t => {
-      const end = orgLastEnd[t.orgId];
-      if (end && now - end > cutoffMs && t.logoUrl) {
-        t.logoUrl = null;
-        cleared++;
-      }
-    });
-
-    if (cleared > 0) persist();
-    return cleared;
   }
 };
