@@ -23,6 +23,12 @@ interface MatchDisplay {
   revisedOvers?: number | null;
   dlsTarget?: number | null;
   resultText?: string | null;
+  striker?: string | null;
+  nonStriker?: string | null;
+  bowler?: string | null;
+  battingCard?: { name: string; runs: number; balls: number; status: string }[];
+  bowlingCard?: { name: string; overs?: string; runs: number; wickets: number; figures?: string }[];
+  fallOfWickets?: { name: string; score: number; overs: string }[];
 }
 
 interface Match {
@@ -61,13 +67,11 @@ export default function Scoreboard() {
     load();
     const poll = setInterval(load, 5000);
     const tick = setInterval(() => setClock(new Date().toLocaleTimeString()), 1000);
-
     const socket = io(getSocketUrl(), { transports: ['websocket', 'polling'] });
     socketRef.current = socket;
     socket.on('score-update', (data: Match) => {
       if (data?.id) setMatch(data);
     });
-
     return () => {
       clearInterval(poll);
       clearInterval(tick);
@@ -107,14 +111,10 @@ export default function Scoreboard() {
         <div className="text-sm sm:text-base text-slate-400 truncate max-w-[50%]">{match.name}</div>
         <div className="flex items-center gap-3">
           {d?.inPowerplay && (
-            <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-600/30 text-emerald-400">
-              POWERPLAY
-            </span>
+            <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-600/30 text-emerald-400">POWERPLAY</span>
           )}
           {freeHit && (
-            <span className="px-3 py-1 rounded-full text-xs font-bold bg-orange-500/30 text-orange-400 animate-pulse">
-              FREE HIT
-            </span>
+            <span className="px-3 py-1 rounded-full text-xs font-bold bg-orange-500/30 text-orange-400 animate-pulse">FREE HIT</span>
           )}
           {d?.superOver && (
             <span className="px-3 py-1 rounded-full text-xs font-bold bg-blue-600/30 text-blue-400">SUPER OVER</span>
@@ -126,11 +126,7 @@ export default function Scoreboard() {
             <span className="px-3 py-1 rounded-full text-xs font-bold bg-red-600/40 text-red-300">ABANDONED</span>
           )}
           <span className="text-slate-500 text-sm tabular-nums hidden sm:inline">{clock}</span>
-          <button
-            type="button"
-            onClick={() => setProjector(p => !p)}
-            className="text-xs px-3 py-1 rounded-full bg-slate-800 text-slate-300"
-          >
+          <button type="button" onClick={() => setProjector(p => !p)} className="text-xs px-3 py-1 rounded-full bg-slate-800 text-slate-300">
             {projector ? 'Exit FS' : 'Fullscreen'}
           </button>
         </div>
@@ -151,9 +147,7 @@ export default function Scoreboard() {
           {d?.score}
         </div>
 
-        <div className="mt-4 text-2xl sm:text-4xl text-slate-300 tabular-nums">
-          ({d?.overs} ov)
-        </div>
+        <div className="mt-4 text-2xl sm:text-4xl text-slate-300 tabular-nums">({d?.overs} ov)</div>
 
         <div className="mt-8 grid grid-cols-2 sm:grid-cols-4 gap-6 sm:gap-10 text-center">
           <div>
@@ -211,6 +205,46 @@ export default function Scoreboard() {
           ))}
         </div>
       </div>
+
+      {(d?.striker || d?.bowler || (d?.battingCard && d.battingCard.length > 0)) && (
+        <div className="px-4 sm:px-8 pb-6 max-w-4xl mx-auto w-full grid sm:grid-cols-3 gap-4 text-sm">
+          <div className="rounded-2xl bg-slate-900/80 border border-slate-800 p-4">
+            <div className="text-xs text-slate-500 uppercase mb-2">Batting</div>
+            <div className="space-y-1">
+              {(d?.battingCard || []).filter(b => b.status === 'batting' || b.status === 'not_out').slice(0, 2).map(b => (
+                <div key={b.name} className="flex justify-between tabular-nums">
+                  <span className={b.name === d?.striker ? 'text-amber-300 font-semibold' : 'text-slate-200'}>
+                    {b.name}{b.name === d?.striker ? ' *' : ''}
+                  </span>
+                  <span>{b.runs} ({b.balls})</span>
+                </div>
+              ))}
+              {!d?.battingCard?.length && (
+                <>
+                  <div className="flex justify-between"><span className="text-amber-300">{d?.striker || '—'} *</span><span className="text-slate-500">striker</span></div>
+                  <div className="flex justify-between"><span>{d?.nonStriker || '—'}</span><span className="text-slate-500">non-striker</span></div>
+                </>
+              )}
+            </div>
+          </div>
+          <div className="rounded-2xl bg-slate-900/80 border border-slate-800 p-4">
+            <div className="text-xs text-slate-500 uppercase mb-2">Bowling</div>
+            <div className="text-slate-200 font-semibold">{d?.bowler || '—'}</div>
+            {(d?.bowlingCard || []).filter(b => b.name === d?.bowler).slice(0, 1).map(b => (
+              <div key={b.name} className="text-slate-400 mt-1 tabular-nums">{b.figures || `${b.overs}-${b.runs}-${b.wickets}`}</div>
+            ))}
+          </div>
+          <div className="rounded-2xl bg-slate-900/80 border border-slate-800 p-4">
+            <div className="text-xs text-slate-500 uppercase mb-2">Fall of wickets</div>
+            <div className="text-slate-300 text-xs leading-relaxed">
+              {(d?.fallOfWickets || []).length === 0 && <span className="text-slate-600">—</span>}
+              {(d?.fallOfWickets || []).map((f, i) => (
+                <span key={i}>{f.score}-{i + 1}{i < (d?.fallOfWickets?.length || 0) - 1 ? ' · ' : ''}</span>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="border-t border-slate-800 grid grid-cols-2 divide-x divide-slate-800">
         <div className="p-4 sm:p-6">
