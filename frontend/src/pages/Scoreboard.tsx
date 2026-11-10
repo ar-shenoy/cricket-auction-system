@@ -1,6 +1,29 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { publicApi, getSocketUrl } from '../services/api';
 import { io, Socket } from 'socket.io-client';
+
+interface MatchDisplay {
+  battingName: string;
+  bowlingName: string;
+  score: string;
+  overs: string;
+  crr: string;
+  rrr: string | null;
+  target: number | null;
+  ballsLeft: number | null;
+  thisOver: string[];
+  freeHit?: boolean;
+  inPowerplay?: boolean;
+  powerplayOvers?: number;
+  currentOver?: number;
+  matchStatus?: string;
+  rainDelay?: boolean;
+  abandoned?: boolean;
+  superOver?: boolean;
+  revisedOvers?: number | null;
+  dlsTarget?: number | null;
+  resultText?: string | null;
+}
 
 interface Match {
   id: string;
@@ -12,141 +35,154 @@ interface Match {
   status: string;
   innings1: { runs: number; wickets: number; balls: number };
   innings2: { runs: number; wickets: number; balls: number };
-  display?: {
-    battingName: string;
-    bowlingName: string;
-    score: string;
-    overs: string;
-    crr: string;
-    rrr: string | null;
-    target: number | null;
-    ballsLeft: number | null;
-    thisOver: string[];
-  };
+  result?: string | null;
+  display?: MatchDisplay;
 }
 
 export default function Scoreboard() {
   const [match, setMatch] = useState<Match | null>(null);
-  const [flash, setFlash] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [projector, setProjector] = useState(true);
+  const [clock, setClock] = useState(() => new Date().toLocaleTimeString());
   const socketRef = useRef<Socket | null>(null);
-  const prevScore = useRef<string>('');
 
-  const load = async () => {
+  const load = useCallback(async () => {
     try {
       const res = await publicApi.get('/matches/public/live');
-      setMatch(res.data);
+      setMatch(res.data || null);
     } catch {
-      /* ignore */
+      setMatch(null);
+    } finally {
+      setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     load();
     const poll = setInterval(load, 5000);
-    return () => clearInterval(poll);
-  }, []);
+    const tick = setInterval(() => setClock(new Date().toLocaleTimeString()), 1000);
 
-  useEffect(() => {
     const socket = io(getSocketUrl(), { transports: ['websocket', 'polling'] });
     socketRef.current = socket;
     socket.on('score-update', (data: Match) => {
-      if (data?.display?.score && data.display.score !== prevScore.current) {
-        prevScore.current = data.display.score;
-        const last = data.display.thisOver?.[data.display.thisOver.length - 1];
-        if (last === '4' || last === '6') {
-          setFlash(last === '6' ? 'SIX!' : 'FOUR!');
-          setTimeout(() => setFlash(null), 1800);
-        } else if (last === 'W') {
-          setFlash('WICKET!');
-          setTimeout(() => setFlash(null), 1800);
-        }
-      }
-      setMatch(data);
-      if (data?.id) socket.emit('join-match', data.id);
+      if (data?.id) setMatch(data);
     });
+
     return () => {
+      clearInterval(poll);
+      clearInterval(tick);
       socket.disconnect();
     };
-  }, []);
+  }, [load]);
+
+  useEffect(() => {
+    if (projector) document.documentElement.requestFullscreen?.().catch(() => {});
+  }, [projector]);
 
   const d = match?.display;
+  const freeHit = !!d?.freeHit;
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-black text-slate-400 flex items-center justify-center text-xl">
+        Loading scoreboard…
+      </div>
+    );
+  }
 
   if (!match) {
     return (
-      <div className="min-h-screen bg-slate-950 text-white flex flex-col items-center justify-center p-8">
-        <div className="text-6xl mb-4">🏏</div>
-        <div className="text-2xl text-slate-400">Waiting for live match...</div>
-        <p className="text-slate-600 mt-4 text-sm">Open Scoring panel and start a match</p>
+      <div className="min-h-screen bg-black text-slate-500 flex flex-col items-center justify-center gap-4">
+        <div className="text-2xl">No live match</div>
+        <button type="button" onClick={load} className="px-4 py-2 rounded-full bg-slate-800 text-slate-200 text-sm">
+          Refresh
+        </button>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-white flex flex-col relative overflow-hidden">
-      {flash && (
-        <div className="absolute inset-0 z-30 flex items-center justify-center pointer-events-none">
-          <div
-            className={`text-7xl sm:text-9xl font-black tracking-tight animate-pulse ${
-              flash === 'WICKET!' ? 'text-red-500' : flash === 'SIX!' ? 'text-blue-400' : 'text-emerald-400'
-            }`}
-          >
-            {flash}
-          </div>
-        </div>
-      )}
-
-      <div className="px-6 py-4 flex justify-between items-center border-b border-slate-800">
+    <div className="min-h-screen bg-black text-white flex flex-col select-none">
+      <div className="flex items-center justify-between px-4 sm:px-8 py-3 border-b border-slate-800">
+        <div className="text-sm sm:text-base text-slate-400 truncate max-w-[50%]">{match.name}</div>
         <div className="flex items-center gap-3">
-          <span className="text-2xl">🏏</span>
-          <div>
-            <div className="font-bold text-lg sm:text-xl truncate max-w-[50vw]">{match.name}</div>
-            <div className="text-xs text-slate-500 uppercase tracking-widest">
-              {match.status === 'completed' ? 'Result' : `Innings ${match.innings}`} · {match.oversLimit} overs
-            </div>
-          </div>
+          {d?.inPowerplay && (
+            <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-600/30 text-emerald-400">
+              POWERPLAY
+            </span>
+          )}
+          {freeHit && (
+            <span className="px-3 py-1 rounded-full text-xs font-bold bg-orange-500/30 text-orange-400 animate-pulse">
+              FREE HIT
+            </span>
+          )}
+          {d?.superOver && (
+            <span className="px-3 py-1 rounded-full text-xs font-bold bg-blue-600/30 text-blue-400">SUPER OVER</span>
+          )}
+          {d?.rainDelay && (
+            <span className="px-3 py-1 rounded-full text-xs font-bold bg-sky-600/40 text-sky-300">RAIN DELAY</span>
+          )}
+          {match.status === 'abandoned' && (
+            <span className="px-3 py-1 rounded-full text-xs font-bold bg-red-600/40 text-red-300">ABANDONED</span>
+          )}
+          <span className="text-slate-500 text-sm tabular-nums hidden sm:inline">{clock}</span>
+          <button
+            type="button"
+            onClick={() => setProjector(p => !p)}
+            className="text-xs px-3 py-1 rounded-full bg-slate-800 text-slate-300"
+          >
+            {projector ? 'Exit FS' : 'Fullscreen'}
+          </button>
         </div>
-        {match.status === 'live' && (
-          <span className="flex items-center gap-2 text-red-400 font-bold text-sm">
-            <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse" />
-            LIVE
-          </span>
-        )}
       </div>
 
       <div className="flex-1 flex flex-col items-center justify-center px-4 py-8">
-        <div className="text-slate-400 text-sm sm:text-lg uppercase tracking-[0.2em] mb-2">
+        {match.result && (
+          <div className="mb-6 text-center text-xl sm:text-3xl font-semibold text-emerald-400">{match.result}</div>
+        )}
+
+        <div className="text-slate-400 text-sm sm:text-lg uppercase tracking-widest mb-2">
           {d?.battingName}
+          <span className="text-slate-600 mx-2">vs</span>
+          {d?.bowlingName}
         </div>
-        <div className="text-7xl sm:text-9xl font-black tabular-nums tracking-tight leading-none">
-          {d?.score || '0/0'}
+
+        <div className="text-6xl sm:text-8xl md:text-9xl font-black tabular-nums tracking-tight leading-none">
+          {d?.score}
         </div>
+
         <div className="mt-4 text-2xl sm:text-4xl text-slate-300 tabular-nums">
-          ({d?.overs || '0.0'} overs)
+          ({d?.overs} ov)
         </div>
-        <div className="mt-6 flex flex-wrap justify-center gap-6 text-center">
+
+        <div className="mt-8 grid grid-cols-2 sm:grid-cols-4 gap-6 sm:gap-10 text-center">
           <div>
             <div className="text-xs text-slate-500 uppercase">CRR</div>
-            <div className="text-2xl sm:text-3xl font-bold text-indigo-400">{d?.crr || '0.00'}</div>
+            <div className="text-2xl sm:text-3xl font-bold text-slate-200">{d?.crr}</div>
           </div>
           {d?.target != null && (
-            <>
-              <div>
-                <div className="text-xs text-slate-500 uppercase">Target</div>
-                <div className="text-2xl sm:text-3xl font-bold text-amber-400">{d.target}</div>
-              </div>
-              {d.rrr != null && (
-                <div>
-                  <div className="text-xs text-slate-500 uppercase">RRR</div>
-                  <div className="text-2xl sm:text-3xl font-bold text-rose-400">{d.rrr}</div>
-                </div>
-              )}
-              {d.ballsLeft != null && (
-                <div>
-                  <div className="text-xs text-slate-500 uppercase">Balls left</div>
-                  <div className="text-2xl sm:text-3xl font-bold text-slate-200">{d.ballsLeft}</div>
-                </div>
-              )}
-            </>
+            <div>
+              <div className="text-xs text-slate-500 uppercase">Target</div>
+              <div className="text-2xl sm:text-3xl font-bold text-amber-400">{d.target}</div>
+            </div>
+          )}
+          {d?.rrr && d.rrr !== '—' && (
+            <div>
+              <div className="text-xs text-slate-500 uppercase">RRR</div>
+              <div className="text-2xl sm:text-3xl font-bold text-slate-200">{d.rrr}</div>
+            </div>
+          )}
+          {d?.ballsLeft != null && match.innings === 2 && (
+            <div>
+              <div className="text-xs text-slate-500 uppercase">Balls left</div>
+              <div className="text-2xl sm:text-3xl font-bold text-slate-200">{d.ballsLeft}</div>
+            </div>
+          )}
+          {d?.revisedOvers != null && (
+            <div>
+              <div className="text-xs text-slate-500 uppercase">Revised</div>
+              <div className="text-2xl sm:text-3xl font-bold text-sky-400">{d.revisedOvers} ov</div>
+            </div>
           )}
         </div>
 
@@ -157,14 +193,16 @@ export default function Scoreboard() {
             <span
               key={i}
               className={`w-10 h-10 sm:w-12 sm:h-12 rounded-full flex items-center justify-center text-sm sm:text-base font-bold ${
-                b === 'W'
+                b === 'W' || b.startsWith('W')
                   ? 'bg-red-600'
-                  : b === '4' || b === '6'
-                  ? b === '6'
-                    ? 'bg-blue-600'
-                    : 'bg-emerald-600'
+                  : b === '6'
+                  ? 'bg-blue-600'
+                  : b === '4'
+                  ? 'bg-emerald-600'
                   : b.startsWith('Wd') || b.startsWith('Nb')
                   ? 'bg-orange-500'
+                  : b === 'DB'
+                  ? 'bg-slate-600'
                   : 'bg-slate-700'
               }`}
             >
@@ -187,7 +225,7 @@ export default function Scoreboard() {
         <div className="p-4 sm:p-6 text-right">
           <div className="text-xs text-slate-500 uppercase mb-1">{match.teamBName}</div>
           <div className="text-xl sm:text-3xl font-bold tabular-nums">
-            {match.innings >= 2 || match.status === 'completed' ? (
+            {match.innings >= 2 || match.status === 'completed' || match.status === 'abandoned' ? (
               <>
                 {match.innings2.runs}/{match.innings2.wickets}
                 <span className="text-slate-500 text-sm sm:text-lg font-normal ml-2">
