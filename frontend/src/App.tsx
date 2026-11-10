@@ -12,6 +12,7 @@ import Scoring from './pages/Scoring';
 import Scoreboard from './pages/Scoreboard';
 import MatchResult from './pages/MatchResult';
 import PointsTable from './pages/PointsTable';
+import MatchCentre from './pages/MatchCentre';
 import Landing from './pages/Landing';
 import RegisterOrg from './pages/RegisterOrg';
 import Billing from './pages/Billing';
@@ -36,10 +37,10 @@ export default function App() {
         <Route path="/welcome" element={<Landing />} />
         <Route path="/register" element={<RegisterOrg />} />
         <Route path="/login" element={<Login />} />
-        {/* Public pages */}
         <Route path="/live" element={<LiveViewer />} />
         <Route path="/results" element={<PublicResults />} />
         <Route path="/scoreboard" element={<Scoreboard />} />
+        <Route path="/match-live" element={<MatchCentre />} />
         <Route path="/match/:id" element={<MatchResult />} />
         <Route path="/points" element={<PointsTable />} />
         <Route path="/" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
