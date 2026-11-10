@@ -61,6 +61,11 @@ export default function Login() {
               </div>
               <button type="submit" disabled={loading} className="as-btn-primary w-full mt-2">{loading ? 'Signing in…' : 'Sign in'}</button>
             </form>
+            <div className="mt-4 text-[12px] space-y-1" style={{ color: 'var(--text-2)' }}>
+              <div><span className="font-medium" style={{ color: 'var(--text)' }}>League admin:</span> admin@auction.com / admin123</div>
+              <div><span className="font-medium" style={{ color: 'var(--text)' }}>Developer:</span> developer@auction.com / devxai2026</div>
+            </div>
+
             <p className="text-center text-[14px] mt-6" style={{ color: 'var(--text-2)' }}>
               New? <Link to="/register" className="font-medium" style={{ color: 'var(--accent)' }}>Create organization</Link>
             </p>
