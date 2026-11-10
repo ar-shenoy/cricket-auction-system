@@ -47,12 +47,13 @@ export default function Features() {
     }
   };
 
-  if (user?.role !== 'developer') {
+  const isDev = user?.role === 'developer' || user?.email === 'developer@auction.com';
+  if (!isDev) {
     return (
       <AppShell title="Features">
         <div className="glass p-8 text-center space-y-2" style={{ color: 'var(--text-2)' }}>
           <div className="font-medium" style={{ color: 'var(--text)' }}>Developer login required</div>
-          <p className="text-[13px]">Feature toggles are only available to the platform developer account — not league admins.</p>
+          <p className="text-[13px]">Sign in with the platform developer account to manage feature toggles. League admins cannot change these.</p>
         </div>
       </AppShell>
     );
