@@ -223,6 +223,14 @@ router.post('/:id/bid', authMiddleware, (req, res) => {
   if (!finalTeamId) return res.status(400).json({ error: 'Team ID required' });
   const team = getTeams().find(t => t.id === finalTeamId);
   if (!team) return res.status(404).json({ error: 'Team not found' });
+
+  // Same team cannot bid again until another team takes the lead
+  if (auction.currentBidderTeamId && auction.currentBidderTeamId === finalTeamId) {
+    return res.status(400).json({
+      error: 'Your team already has the highest bid. Wait for another team to bid (or Sell).'
+    });
+  }
+
   const bidAmount = Number(amount);
   if (isNaN(bidAmount) || bidAmount <= 0) {
     return res.status(400).json({ error: 'Invalid bid amount' });
@@ -404,7 +412,6 @@ router.post('/:id/undo-last-sell', authMiddleware, requireRole('admin'), (req, r
   });
 
   const result = { status: 'Undone', player, team: team || null, price: restoredBid, restoredBid };
-  // Do NOT emit player-selected — that was resetting clients toward base price
   emitAuction(req.app.get('io'), auction.id, 'player-sold', { auction: updatedAuction, result });
   res.json({ message: 'Last sale undone — player back at last sold price', auction: updatedAuction, result, player });
 });
