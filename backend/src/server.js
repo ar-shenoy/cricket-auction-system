@@ -13,6 +13,9 @@ const matchRoutes = require('./routes/matches');
 const orgRoutes = require('./routes/orgs');
 const billingRoutes = require('./routes/billing');
 const analyticsRoutes = require('./routes/analytics');
+const tournamentRoutes = require('./routes/tournaments');
+const franchiseRoutes = require('./routes/franchise');
+const broadcastRoutes = require('./routes/broadcast');
 
 const app = express();
 const server = http.createServer(app);
@@ -36,6 +39,9 @@ app.use('/api/auctions', auctionRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/matches', matchRoutes);
 app.use('/api/analytics', analyticsRoutes);
+app.use('/api/tournaments', tournamentRoutes);
+app.use('/api/franchise', franchiseRoutes);
+app.use('/api/broadcast', broadcastRoutes);
 
 app.get('/api/health', (req, res) => {
   res.json({ ok: true, ts: new Date().toISOString() });
