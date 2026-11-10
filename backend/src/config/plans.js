@@ -57,7 +57,15 @@ const DEFAULT_FEATURES = {
   billing: true,
   liveTeams: false,
   points: true,
-  scoreboard: true
+  scoreboard: true,
+  auctionTimer: true,
+  auctionKeyboard: true,
+  auctionExport: true,
+  auctionBudgetHints: true,
+  auctionRecallUnsold: true,
+  matchDls: true,
+  matchSuperOver: true,
+  matchRainDelay: true
 };
 
 function getFeatures(org) {
