@@ -4,12 +4,16 @@ import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 import ThemeToggle from './ThemeToggle';
 
-const ALL_NAV: { to: string; label: string; feature: string | null; adminOnly?: boolean; developerOnly?: boolean }[] = [
+const ALL_NAV: { to: string; label: string; feature: string | null; developerOnly?: boolean }[] = [
   { to: '/', label: 'Home', feature: null },
   { to: '/players', label: 'Players', feature: 'players' },
   { to: '/teams', label: 'Teams', feature: 'teams' },
   { to: '/auction', label: 'Auction', feature: 'auction' },
   { to: '/scoring', label: 'Scoring', feature: 'scoring' },
+  { to: '/hub', label: 'Hub', feature: 'tournamentHub' },
+  { to: '/franchise', label: 'Franchise', feature: 'franchisePortal' },
+  { to: '/broadcast', label: 'Broadcast', feature: 'broadcastPack' },
+  { to: '/intelligence', label: 'Intel', feature: 'intelligence' },
   { to: '/reports', label: 'Reports', feature: 'reports' },
   { to: '/billing', label: 'Billing', feature: 'billing' },
   { to: '/features', label: 'Features', feature: null, developerOnly: true }
@@ -34,21 +38,24 @@ export default function AppShell({
     api.get('/orgs/features').then(r => setFeatures(r.data.features || {})).catch(() => {});
   }, []);
 
+  const on = (key: string | null) => {
+    if (!key) return true;
+    return features[key] !== false;
+  };
+
   const nav = ALL_NAV.filter(item => {
-    if ((item as any).adminOnly && user?.role !== 'admin') return false;
-    if ((item as any).developerOnly && user?.role !== 'developer') return false;
-    if (!item.feature) return true;
-    if (features[item.feature] === false) return false;
-    return true;
+    if (item.developerOnly && user?.role !== 'developer') return false;
+    return on(item.feature);
   });
 
   const topLinks = [
-    { to: '/live', label: 'Live', feature: 'auction' },
-    { to: '/results', label: 'Results', feature: 'auction' },
+    { to: '/live', label: 'Live', feature: 'publicLive' },
+    { to: '/results', label: 'Results', feature: 'publicResults' },
     { href: '/scoreboard', label: 'Board', feature: 'scoreboard' },
-    { to: '/points', label: 'Points', feature: 'points' },
-    { href: '/match-live', label: 'Match centre', feature: 'scoreboard' }
-  ].filter(item => features[item.feature as string] !== false);
+    { to: '/points', label: 'Points', feature: 'publicPoints' },
+    { href: '/match-live', label: 'Match centre', feature: 'publicMatchCentre' },
+    { href: '/tournament', label: 'Tournament', feature: 'publicTournament' }
+  ].filter(item => on(item.feature));
 
   return (
     <div className="page-mesh" style={{ color: 'var(--text)' }}>
@@ -94,12 +101,7 @@ export default function AppShell({
             )}
             <ThemeToggle />
             {user && (
-              <button
-                type="button"
-                onClick={logout}
-                className="text-[13px] px-2.5 py-1 rounded-full"
-                style={{ color: 'var(--text-2)' }}
-              >
+              <button type="button" onClick={logout} className="text-[13px] px-2.5 py-1 rounded-full" style={{ color: 'var(--text-2)' }}>
                 Logout
               </button>
             )}
