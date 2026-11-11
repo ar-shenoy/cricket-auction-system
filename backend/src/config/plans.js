@@ -48,6 +48,7 @@ function canUse(org, feature) {
   return !!plan.limits[feature];
 }
 
+/** Every product surface is togglable by developer per org */
 const DEFAULT_FEATURES = {
   players: true,
   teams: true,
@@ -55,17 +56,30 @@ const DEFAULT_FEATURES = {
   scoring: true,
   reports: true,
   billing: true,
-  liveTeams: false,
   points: true,
   scoreboard: true,
+  tournamentHub: true,
+  franchisePortal: true,
+  broadcastPack: true,
+  intelligence: true,
+  liveTeams: false,
+  publicLive: true,
+  publicResults: true,
+  publicMatchCentre: true,
+  publicTournament: true,
+  publicPoints: true,
   auctionTimer: true,
   auctionKeyboard: true,
   auctionExport: true,
   auctionBudgetHints: true,
   auctionRecallUnsold: true,
+  auctionShareLive: true,
   matchDls: true,
   matchSuperOver: true,
-  matchRainDelay: true
+  matchRainDelay: true,
+  matchCsvImport: true,
+  dashboardAnalytics: true,
+  dashboardPublicFeeds: true
 };
 
 function getFeatures(org) {
