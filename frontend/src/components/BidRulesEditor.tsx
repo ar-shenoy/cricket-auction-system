@@ -5,6 +5,8 @@ interface Props {
   initialRules?: BidRule[];
   initialTimer?: number;
   initialName?: string;
+  /** When false, hide timer field and save bidTimerSeconds as 0 */
+  showTimer?: boolean;
   onSave: (data: { bidRules: BidRule[]; bidTimerSeconds: number; name: string }) => Promise<void>;
   disabled?: boolean;
 }
@@ -31,7 +33,7 @@ function rowsToRules(rows: Row[]): BidRule[] {
   });
 }
 
-export default function BidRulesEditor({ initialRules, initialTimer = 20, initialName = '', onSave, disabled }: Props) {
+export default function BidRulesEditor({ initialRules, initialTimer = 20, initialName = '', showTimer = true, onSave, disabled }: Props) {
   const [rows, setRows] = useState<Row[]>(() => rulesToRows(initialRules || DEFAULT_BID_RULES));
   const [timer, setTimer] = useState(String(initialTimer));
   const [name, setName] = useState(initialName);
@@ -51,7 +53,6 @@ export default function BidRulesEditor({ initialRules, initialTimer = 20, initia
   const addRow = () => {
     setRows(prev => {
       const next = [...prev];
-      // Insert before last (unlimited) tier if last has empty upTo
       if (next.length && next[next.length - 1].upTo === '') {
         next.splice(next.length - 1, 0, { upTo: '', increment: '5000' });
       } else {
@@ -91,9 +92,11 @@ export default function BidRulesEditor({ initialRules, initialTimer = 20, initia
       setError('Each step increment must be a positive number.');
       return;
     }
-    const t = Number(timer);
-    if (!t || t < 5 || t > 300) {
-      setError('Timer must be between 5 and 300 seconds.');
+    let t = Number(timer);
+    if (!showTimer) {
+      t = 0;
+    } else if (Number.isNaN(t) || t < 0 || t > 300) {
+      setError('Timer must be 0 (off) or 1–300 seconds.');
       return;
     }
     setSaving(true);
@@ -106,7 +109,6 @@ export default function BidRulesEditor({ initialRules, initialTimer = 20, initia
     }
   };
 
-  // Preview text
   const preview = rowsToRules(rows).map((r, i) => {
     if (r.upTo === null) return `₹∞ → +₹${r.increment.toLocaleString()}`;
     return `below ₹${Number(r.upTo).toLocaleString()} → +₹${r.increment.toLocaleString()}`;
@@ -134,10 +136,12 @@ export default function BidRulesEditor({ initialRules, initialTimer = 20, initia
           <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Auction name</label>
           <input value={name} onChange={e => setName(e.target.value)} disabled={disabled} className={inputCls} placeholder="e.g. Summer League 2026" />
         </div>
+        {showTimer && (
         <div>
-          <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Bid timer (seconds)</label>
-          <input type="number" min={5} max={300} value={timer} onChange={e => setTimer(e.target.value)} disabled={disabled} className={inputCls} />
+          <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Bid timer (seconds, 0 = off)</label>
+          <input type="number" min={0} max={300} value={timer} onChange={e => setTimer(e.target.value)} disabled={disabled} className={inputCls} />
         </div>
+      )}
       </div>
 
       <div>
