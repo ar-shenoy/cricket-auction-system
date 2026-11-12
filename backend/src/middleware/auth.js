@@ -1,28 +1,33 @@
 const jwt = require('jsonwebtoken');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
+const JWT_SECRET = process.env.JWT_SECRET || 'cricket_auction_secret_key_2026';
 
 function authMiddleware(req, res, next) {
-  const header = req.headers.authorization;
-  if (!header || !header.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'Unauthorized' });
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'No token provided' });
   }
+  const token = authHeader.split(' ')[1];
   try {
-    const token = header.slice(7);
-    req.user = jwt.verify(token, JWT_SECRET);
+    const decoded = jwt.verify(token, JWT_SECRET);
+    req.user = decoded;
     next();
-  } catch (e) {
+  } catch (err) {
     return res.status(401).json({ error: 'Invalid token' });
   }
 }
 
 function requireRole(...roles) {
   return (req, res, next) => {
-    if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
-    // Developer is superuser for admin routes
-    if (req.user.role === 'developer') return next();
+    if (!req.user) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    // Developer is superuser — can access any admin route
+    if (req.user.role === 'developer') {
+      return next();
+    }
     if (!roles.includes(req.user.role)) {
-      return res.status(403).json({ error: 'Forbidden' });
+      return res.status(403).json({ error: 'Forbidden: insufficient role' });
     }
     next();
   };
