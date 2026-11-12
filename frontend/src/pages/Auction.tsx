@@ -1,1 +1,1 @@
-SEE_FILE
+@/tmp/Auction_fixed.tsx
