@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { api } from '../services/api';
+import api, { getSocketUrl } from '../services/api';
 import AppShell from '../components/AppShell';
 import { io, Socket } from 'socket.io-client';
 import { nextMinBid, DEFAULT_BID_RULES, BidRule } from '../utils/bidRules';
@@ -93,8 +93,7 @@ export default function Auction() {
 
   useEffect(() => {
     if (!auction?.id) return;
-    const base = (import.meta as any).env?.VITE_API_URL || window.location.origin.replace(/:\d+$/, ':5000');
-    const socket = io(base, { transports: ['websocket', 'polling'] });
+    const socket = io(getSocketUrl(), { transports: ['websocket', 'polling'], reconnection: true, reconnectionAttempts: 20, reconnectionDelay: 1000 });
     socketRef.current = socket;
     socket.emit('join-auction', auction.id);
     socket.on('new-bid', (payload: any) => {
@@ -420,16 +419,19 @@ export default function Auction() {
                     <button
                       key={tm.id}
                       type="button"
-                      disabled={full || leading || !currentPlayer}
+                      disabled={full || leading || auction.status !== 'live'}
                       onClick={() => quickBid(tm)}
-                      className={`text-left p-2 rounded-lg border text-sm transition ${
-                        leading ? 'border-emerald-500/60 bg-emerald-500/10' : 'border-[var(--border)]'
-                      } ${full ? 'opacity-40' : 'hover:border-[var(--accent)]'}`}
-                      style={{ background: 'var(--surface)' }}
+                      className={`text-left rounded-lg p-2.5 border transition ${leading ? 'ring-2 ring-emerald-500/60' : ''}`}
+                      style={{ background: 'var(--surface)', borderColor: 'var(--border)', opacity: full ? 0.5 : 1 }}
                     >
-                      <div className="font-medium truncate">{tm.name}</div>
-                      <div className="text-xs" style={{ color: 'var(--text-2)' }}>₹{tm.remainingPurse.toLocaleString()} · {sold}/{tm.maxPlayers ?? '∞'}</div>
-                      {leading && <div className="text-[10px] text-emerald-400 mt-0.5">Leading</div>}
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-mono w-4" style={{ color: 'var(--text-2)' }}>{i + 1}</span>
+                        <span className="font-medium text-sm truncate">{tm.name}</span>
+                      </div>
+                      <div className="text-xs mt-1" style={{ color: 'var(--text-2)' }}>
+                        ₹{tm.remainingPurse.toLocaleString()}
+                        {feat('auctionBudgetHints') && tm.maxPlayers != null && ` · ${sold}/${tm.maxPlayers}`}
+                      </div>
                     </button>
                   );
                 })}
@@ -437,27 +439,37 @@ export default function Auction() {
             )}
 
             {/* Admin manual bid */}
-            {isAdmin && auction.status === 'live' && currentPlayer && (
+            {isAdmin && auction.status === 'live' && (
               <div className="flex flex-wrap gap-2 items-end">
-                <select value={adminBidTeamId} onChange={e => setAdminBidTeamId(e.target.value)} className="as-input text-sm">
-                  <option value="">Team…</option>
-                  {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                </select>
-                <input type="number" value={bidAmount} onChange={e => setBidAmount(e.target.value)} placeholder="Amount" className="as-input text-sm w-28" />
-                <button type="button" className="as-btn-primary text-sm" onClick={placeBid}>Bid</button>
+                <div>
+                  <label className="text-xs block mb-1" style={{ color: 'var(--text-2)' }}>Team</label>
+                  <select value={adminBidTeamId} onChange={e => setAdminBidTeamId(e.target.value)} className="as-input text-sm">
+                    <option value="">Select team</option>
+                    {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs block mb-1" style={{ color: 'var(--text-2)' }}>Amount</label>
+                  <input type="number" value={bidAmount} onChange={e => setBidAmount(e.target.value)} className="as-input text-sm w-28" />
+                </div>
+                <button type="button" onClick={placeBid} className="as-btn-primary text-sm">Place bid</button>
               </div>
             )}
 
-            {/* Bid history */}
+            {/* Bid history dropdown */}
             {bidHistory.length > 0 && (
-              <div className="text-sm">
-                <button type="button" className="as-btn-ghost text-xs" onClick={() => setShowBidHistory(v => !v)}>
-                  Bid history ({bidHistory.length}) {showBidHistory ? '▾' : '▸'}
+              <div className="rounded-lg border" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
+                <button type="button" className="w-full text-left px-3 py-2 text-sm flex justify-between" onClick={() => setShowBidHistory(v => !v)}>
+                  <span>Bid history ({bidHistory.length})</span>
+                  <span>{showBidHistory ? '▲' : '▼'}</span>
                 </button>
                 {showBidHistory && (
-                  <ul className="mt-1 max-h-40 overflow-auto space-y-0.5 text-xs" style={{ color: 'var(--text-2)' }}>
-                    {bidHistory.slice(0, 15).map(b => (
-                      <li key={b.id}>₹{b.amount.toLocaleString()} — {b.teamName}</li>
+                  <ul className="max-h-40 overflow-auto text-sm border-t" style={{ borderColor: 'var(--border)' }}>
+                    {bidHistory.map(b => (
+                      <li key={b.id} className="px-3 py-1.5 flex justify-between gap-2" style={{ borderBottom: '1px solid var(--border)' }}>
+                        <span className="truncate">{b.teamName}</span>
+                        <span className="tabular-nums font-medium">₹{b.amount.toLocaleString()}</span>
+                      </li>
                     ))}
                   </ul>
                 )}
@@ -465,57 +477,69 @@ export default function Auction() {
             )}
           </div>
 
-          {/* Sidebar */}
+          {/* Right column */}
           <div className="space-y-3">
-            {/* Settings only in draft — never during live/paused/completed */}
+            {/* Settings — draft only */}
             {isAdmin && auction.status === 'draft' && (
-              <div className="rounded-xl p-3 border space-y-2" style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}>
-                <h3 className="text-sm font-medium">Auction settings</h3>
+              <div className="rounded-xl p-3 border" style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}>
+                <p className="text-xs mb-2 font-medium" style={{ color: 'var(--text-2)' }}>Settings only in draft</p>
                 <BidRulesEditor
                   rules={auction.bidRules || DEFAULT_BID_RULES}
-                  timerSeconds={auction.bidTimerSeconds}
+                  timerSeconds={auction.bidTimerSeconds || 0}
                   showTimer={feat('auctionTimer')}
-                  onSave={async (rules, timer) => {
+                  onChange={async (rules, timer) => {
                     try {
-                      const res = await api.put(`/auctions/${auction.id}/settings`, { bidRules: rules, bidTimerSeconds: timer });
+                      const res = await api.patch(`/auctions/${auction.id}`, { bidRules: rules, bidTimerSeconds: timer });
                       setAuction(res.data);
-                      showMsg('ok', 'Settings saved');
-                    } catch (err: any) { showMsg('error', err.response?.data?.error || 'Save failed'); }
+                    } catch (err: any) { showMsg('error', err.response?.data?.error || 'Update failed'); }
                   }}
                 />
               </div>
             )}
 
-            {/* Available / Unsold lists */}
+            {/* Available players */}
             {isAdmin && (auction.status === 'live' || auction.status === 'paused' || auction.status === 'draft') && (
-              <div className="rounded-xl p-3 border max-h-64 overflow-auto" style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}>
-                <h3 className="text-sm font-medium mb-2">Players</h3>
-                {availablePlayers.slice(0, 30).map(p => (
-                  <button key={p.id} type="button" className="block w-full text-left text-xs py-1 truncate hover:underline" onClick={() => selectPlayer(p.id)}>
-                    {p.name} · {p.role} · ₹{(p.basePrice || 0).toLocaleString()}
-                  </button>
-                ))}
-                {unsoldPlayers.length > 0 && (
-                  <>
-                    <p className="text-xs mt-2 font-medium" style={{ color: 'var(--text-2)' }}>Unsold</p>
-                    {unsoldPlayers.slice(0, 15).map(p => (
-                      <button key={p.id} type="button" className="block w-full text-left text-xs py-1 truncate hover:underline" onClick={() => selectPlayer(p.id)}>
+              <div className="rounded-xl p-3 border" style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}>
+                <p className="text-xs mb-2 font-medium" style={{ color: 'var(--text-2)' }}>Available ({availablePlayers.length})</p>
+                <ul className="max-h-48 overflow-auto text-sm space-y-1">
+                  {availablePlayers.slice(0, 40).map(p => (
+                    <li key={p.id}>
+                      <button type="button" className="w-full text-left truncate hover:underline" onClick={() => selectPlayer(p.id)}>
+                        {p.name} <span style={{ color: 'var(--text-2)' }}>· {p.role}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {/* Unsold */}
+            {feat('auctionRecallUnsold') && isAdmin && unsoldPlayers.length > 0 && (
+              <div className="rounded-xl p-3 border" style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}>
+                <p className="text-xs mb-2 font-medium" style={{ color: 'var(--text-2)' }}>Unsold ({unsoldPlayers.length})</p>
+                <ul className="max-h-32 overflow-auto text-sm space-y-1">
+                  {unsoldPlayers.map(p => (
+                    <li key={p.id}>
+                      <button type="button" className="w-full text-left truncate hover:underline" onClick={() => selectPlayer(p.id)}>
                         {p.name}
                       </button>
-                    ))}
-                  </>
-                )}
+                    </li>
+                  ))}
+                </ul>
               </div>
             )}
 
             {/* Sold list */}
-            <div className="rounded-xl p-3 border max-h-48 overflow-auto" style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}>
-              <h3 className="text-sm font-medium mb-2">Sold ({soldList.length})</h3>
-              {soldList.slice().reverse().slice(0, 20).map(s => (
-                <div key={s.id} className="text-xs py-0.5 truncate">
-                  {s.player?.name || s.playerId} → {s.team?.name || s.teamId} · ₹{(s.soldPrice || 0).toLocaleString()}
-                </div>
-              ))}
+            <div className="rounded-xl p-3 border" style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}>
+              <p className="text-xs mb-2 font-medium" style={{ color: 'var(--text-2)' }}>Sold ({soldList.length})</p>
+              <ul className="max-h-40 overflow-auto text-sm space-y-1">
+                {soldList.map(s => (
+                  <li key={s.id} className="flex justify-between gap-2">
+                    <span className="truncate">{s.player?.name || s.playerId}</span>
+                    <span className="tabular-nums shrink-0">₹{(s.soldPrice || 0).toLocaleString()}</span>
+                  </li>
+                ))}
+              </ul>
             </div>
           </div>
         </div>
