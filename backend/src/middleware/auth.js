@@ -1,40 +1,28 @@
 const jwt = require('jsonwebtoken');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'cricket_auction_secret_key_2026';
+const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
 
 function authMiddleware(req, res, next) {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'No token provided' });
+  const header = req.headers.authorization;
+  if (!header || !header.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Unauthorized' });
   }
-
-  const token = authHeader.split(' ')[1];
   try {
-    const decoded = jwt.verify(token, JWT_SECRET);
-    req.user = decoded;
+    const token = header.slice(7);
+    req.user = jwt.verify(token, JWT_SECRET);
     next();
-  } catch (err) {
-    return res.status(401).json({ error: 'Invalid or expired token' });
+  } catch (e) {
+    return res.status(401).json({ error: 'Invalid token' });
   }
 }
 
 function requireRole(...roles) {
   return (req, res, next) => {
-    if (!req.user) {
-      return res.status(403).json({ error: 'Access denied. Insufficient permissions.' });
-    }
-    const role = req.user.role;
-    // Developer-only gates stay exclusive
-    if (roles.length === 1 && roles[0] === 'developer') {
-      if (role !== 'developer') {
-        return res.status(403).json({ error: 'Access denied. Developer only.' });
-      }
-      return next();
-    }
-    // Platform developer may perform admin/manager actions
-    if (role === 'developer') return next();
-    if (!roles.includes(role)) {
-      return res.status(403).json({ error: 'Access denied. Insufficient permissions.' });
+    if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+    // Developer is superuser for admin routes
+    if (req.user.role === 'developer') return next();
+    if (!roles.includes(req.user.role)) {
+      return res.status(403).json({ error: 'Forbidden' });
     }
     next();
   };
