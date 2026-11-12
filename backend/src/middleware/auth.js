@@ -20,7 +20,20 @@ function authMiddleware(req, res, next) {
 
 function requireRole(...roles) {
   return (req, res, next) => {
-    if (!req.user || !roles.includes(req.user.role)) {
+    if (!req.user) {
+      return res.status(403).json({ error: 'Access denied. Insufficient permissions.' });
+    }
+    const role = req.user.role;
+    // Developer-only gates stay exclusive
+    if (roles.length === 1 && roles[0] === 'developer') {
+      if (role !== 'developer') {
+        return res.status(403).json({ error: 'Access denied. Developer only.' });
+      }
+      return next();
+    }
+    // Platform developer may perform admin/manager actions
+    if (role === 'developer') return next();
+    if (!roles.includes(role)) {
       return res.status(403).json({ error: 'Access denied. Insufficient permissions.' });
     }
     next();
