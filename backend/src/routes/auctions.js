@@ -91,6 +91,15 @@ router.get('/public/sold', (req, res) => {
   res.json(sold.map(s => ({ ...s, player: players.find(p => p.id === s.playerId), team: teams.find(t => t.id === s.teamId) })));
 });
 
+router.get('/:id/public/sold', (req, res) => {
+  const auction = getAuctions().find(a => a.id === req.params.id);
+  if (!auction) return res.status(404).json({ error: 'Auction not found' });
+  const sold = getSoldPlayers().filter(s => s.auctionId === auction.id);
+  const players = getPlayers();
+  const teams = getTeams();
+  res.json(sold.map(s => ({ ...s, player: players.find(p => p.id === s.playerId), team: teams.find(t => t.id === s.teamId) })));
+});
+
 router.get('/:id', authMiddleware, (req, res) => {
   const auction = getAuctions().find(a => a.id === req.params.id);
   if (!auction) return res.status(404).json({ error: 'Auction not found' });
@@ -207,7 +216,6 @@ router.post('/:id/bid', authMiddleware, (req, res) => {
   if (isNaN(bidAmount) || bidAmount <= 0) {
     const increment = getIncrement(auction.currentBid, auction);
     const base = Number(auction.currentBid) || 0;
-    // First bid also steps up from base (base + increment), not equal to base
     bidAmount = base > 0 ? base + increment : increment;
   }
   const soldForTeam = getSoldPlayers().filter(s => s.teamId === finalTeamId && s.auctionId === auction.id);
@@ -216,9 +224,7 @@ router.post('/:id/bid', authMiddleware, (req, res) => {
   const maxAllowed = maxBidForTeam(team, soldForTeam.length);
   if (bidAmount > maxAllowed) return res.status(400).json({ error: `Max bid for this team is ₹${maxAllowed.toLocaleString()} (must leave ₹${MIN_SLOT.toLocaleString()} for each remaining squad slot)`, maxBid: maxAllowed });
   const increment = getIncrement(auction.currentBid, auction);
-  const minBid = (Number(auction.currentBid) || 0) > 0
-    ? Number(auction.currentBid) + increment
-    : increment;
+  const minBid = (Number(auction.currentBid) || 0) > 0 ? Number(auction.currentBid) + increment : increment;
   const slotsLeftIncludingThis = team.maxPlayers != null && team.maxPlayers > 0 ? Number(team.maxPlayers) - soldForTeam.length : null;
   const isLastSlot = slotsLeftIncludingThis === 1;
   const isAllIn = bidAmount === team.remainingPurse || bidAmount === maxAllowed;
@@ -274,33 +280,20 @@ router.post('/:id/unsold', authMiddleware, requireRole('admin'), (req, res) => {
 router.post('/:id/undo-last-bid', authMiddleware, requireRole('admin'), (req, res) => {
   const auction = getAuctions().find(a => a.id === req.params.id);
   if (!auction) return res.status(404).json({ error: 'Auction not found' });
-  if (auction.status !== 'live' && auction.status !== 'paused') {
-    return res.status(400).json({ error: 'Auction must be live to undo a bid' });
-  }
-  if (!auction.currentPlayerId) {
-    return res.status(400).json({ error: 'No player on the block — use Undo sale to restore a sold player' });
-  }
+  if (auction.status !== 'live' && auction.status !== 'paused') return res.status(400).json({ error: 'Auction must be live to undo a bid' });
+  if (!auction.currentPlayerId) return res.status(400).json({ error: 'No player on the block — use Undo sale to restore a sold player' });
   const data = getData();
   if (!Array.isArray(data.bids)) data.bids = [];
-  const playerBids = data.bids
-    .filter(b => b.auctionId === auction.id && b.playerId === auction.currentPlayerId)
-    .slice()
-    .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
-  if (playerBids.length === 0) {
-    return res.status(400).json({ error: 'No bids to undo for this player' });
-  }
+  const playerBids = data.bids.filter(b => b.auctionId === auction.id && b.playerId === auction.currentPlayerId).slice().sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+  if (playerBids.length === 0) return res.status(400).json({ error: 'No bids to undo for this player' });
   const removed = playerBids[0];
   const idx = data.bids.findIndex(b => b.id === removed.id);
   if (idx === -1) return res.status(404).json({ error: 'Bid not found' });
   data.bids.splice(idx, 1);
   persist();
-  const remaining = data.bids
-    .filter(b => b.auctionId === auction.id && b.playerId === auction.currentPlayerId)
-    .slice()
-    .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+  const remaining = data.bids.filter(b => b.auctionId === auction.id && b.playerId === auction.currentPlayerId).slice().sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
   const player = getPlayers().find(p => p.id === auction.currentPlayerId);
-  let currentBid;
-  let currentBidderTeamId;
+  let currentBid, currentBidderTeamId;
   if (remaining.length > 0) {
     currentBid = Number(remaining[0].amount) || 0;
     currentBidderTeamId = remaining[0].teamId || null;
@@ -308,27 +301,10 @@ router.post('/:id/undo-last-bid', authMiddleware, requireRole('admin'), (req, re
     currentBid = Number(player?.basePrice) || 0;
     currentBidderTeamId = null;
   }
-  const updatedAuction = updateAuction(auction.id, {
-    currentBid,
-    currentBidderTeamId,
-    timerEndsAt: timerEndsAtFor({ ...auction, bidTimerSeconds: auction.bidTimerSeconds })
-  });
+  const updatedAuction = updateAuction(auction.id, { currentBid, currentBidderTeamId, timerEndsAt: timerEndsAtFor(auction) });
   const team = currentBidderTeamId ? getTeams().find(t => t.id === currentBidderTeamId) : null;
-  emitAuction(req.app.get('io'), auction.id, 'new-bid', {
-    auction: updatedAuction,
-    bid: remaining[0] || null,
-    team: team ? { id: team.id, name: team.name } : null,
-    undoneBid: removed,
-    undo: true
-  });
-  emitAuction(req.app.get('io'), auction.id, 'auction-status', updatedAuction);
-  res.json({
-    auction: updatedAuction,
-    removedBid: removed,
-    message: remaining.length
-      ? `Bid undone — now ₹${currentBid.toLocaleString()}`
-      : `Bid undone — back to base ₹${currentBid.toLocaleString()}`
-  });
+  emitAuction(req.app.get('io'), auction.id, 'new-bid', { auction: updatedAuction, bid: remaining[0] || null, team: team ? { id: team.id, name: team.name } : null, undoneBid: removed, undo: true });
+  res.json({ auction: updatedAuction, removedBid: removed, message: remaining.length ? `Bid undone — now ₹${currentBid.toLocaleString()}` : `Bid undone — back to base ₹${currentBid.toLocaleString()}` });
 });
 
 router.post('/:id/undo-last-sell', authMiddleware, requireRole('admin'), (req, res) => {
@@ -336,9 +312,7 @@ router.post('/:id/undo-last-sell', authMiddleware, requireRole('admin'), (req, r
   if (!auction) return res.status(404).json({ error: 'Auction not found' });
   if (auction.status === 'completed') return res.status(400).json({ error: 'Cannot undo on a completed auction' });
   if (auction.currentPlayerId && !req.body.force) {
-    return res.status(400).json({
-      error: 'A player is on the block. Use Undo bid (Z) to step back a bid, or finish/unsold first. Pass force=true to restore last sold player instead.'
-    });
+    return res.status(400).json({ error: 'A player is on the block. Use Undo bid (Z) to step back a bid, or finish/unsold first.' });
   }
   const soldList = getSoldPlayers().filter(s => s.auctionId === auction.id);
   if (soldList.length === 0) return res.status(400).json({ error: 'No sold players to undo' });
@@ -353,16 +327,9 @@ router.post('/:id/undo-last-sell', authMiddleware, requireRole('admin'), (req, r
   data.soldPlayers.splice(soldIdx, 1);
   persist();
   const player = getPlayers().find(p => p.id === last.playerId);
-  const updatedAuction = updateAuction(auction.id, {
-    currentPlayerId: last.playerId,
-    currentBid: Number(last.soldPrice) || 0,
-    currentBidderTeamId: last.teamId,
-    timerEndsAt: timerEndsAtFor(auction),
-    status: auction.status === 'draft' ? 'live' : auction.status
-  });
+  const updatedAuction = updateAuction(auction.id, { currentPlayerId: last.playerId, currentBid: Number(last.soldPrice) || 0, currentBidderTeamId: last.teamId, timerEndsAt: timerEndsAtFor(auction), status: auction.status === 'draft' ? 'live' : auction.status });
   emitAuction(req.app.get('io'), auction.id, 'player-selected', { auction: updatedAuction, player });
-  emitAuction(req.app.get('io'), auction.id, 'auction-status', updatedAuction);
-  res.json({ auction: updatedAuction, player, message: `Sale undone — ${player?.name} back on the block at ₹${Number(last.soldPrice || 0).toLocaleString()}` });
+  res.json({ auction: updatedAuction, player, message: `Sale undone — ${player?.name} back on the block` });
 });
 
 router.post('/:id/end', authMiddleware, requireRole('admin'), (req, res) => {
@@ -397,8 +364,7 @@ router.get('/:id/unsold-players', authMiddleware, (req, res) => {
 });
 
 router.get('/:id/bids', authMiddleware, (req, res) => {
-  const bids = getBids().filter(b => b.auctionId === req.params.id);
-  res.json(bids);
+  res.json(getBids().filter(b => b.auctionId === req.params.id));
 });
 
 router.get('/:id/public/bids', (req, res) => {
