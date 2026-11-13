@@ -23,8 +23,11 @@ function roleKey(role: string) {
 }
 
 export default function Auction() {
-  const { user, isAdmin } = useAuth();
+  const { user, isAdmin: isAdminFromAuth, isLoading: authLoading } = useAuth();
+  const isAdmin = Boolean(isAdminFromAuth || user?.role === 'admin' || user?.role === 'developer');
   const [auction, setAuction] = useState<Auction | null>(null);
+  const [listLoaded, setListLoaded] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [currentPlayer, setCurrentPlayer] = useState<Player | null>(null);
   const [teams, setTeams] = useState<Team[]>([]);
   const [soldList, setSoldList] = useState<SoldRecord[]>([]);
@@ -74,9 +77,10 @@ export default function Auction() {
   }, []);
 
   const loadAuction = useCallback(async () => {
+    setLoadError(null);
     try {
       const res = await api.get('/auctions/active');
-      const a = res.data;
+      const a = res.data && res.data.id ? res.data : null;
       setAuction(a);
       if (a?.id) {
         await resyncLists(a.id);
@@ -85,8 +89,16 @@ export default function Auction() {
           const p = (players.data || []).find((x: Player) => x.id === a.currentPlayerId);
           setCurrentPlayer(p || null);
         } else setCurrentPlayer(null);
+      } else {
+        setCurrentPlayer(null);
       }
-    } catch (e) { console.error(e); }
+    } catch (e: any) {
+      console.error(e);
+      setLoadError(e?.response?.data?.error || e?.message || 'Failed to load auction');
+      setAuction(null);
+    } finally {
+      setListLoaded(true);
+    }
   }, [resyncLists]);
 
   useEffect(() => { loadAuction(); }, [loadAuction]);
@@ -293,15 +305,10 @@ export default function Auction() {
     navigator.clipboard?.writeText(url).then(() => showMsg('ok', 'Live link copied')).catch(() => showMsg('ok', url));
   };
 
-  if (!auction && isAdmin) {
+  if (authLoading || !listLoaded) {
     return (
       <AppShell title="Auction">
-        <div className="p-6 max-w-lg mx-auto text-center">
-          <p className="mb-4" style={{ color: 'var(--text-2)' }}>No active auction</p>
-          <button type="button" className="as-btn-primary" onClick={createAuction} disabled={creating}>
-            {creating ? 'Creating…' : 'Create new auction'}
-          </button>
-        </div>
+        <div className="p-6 text-center" style={{ color: 'var(--text-2)' }}>Loading…</div>
       </AppShell>
     );
   }
@@ -309,7 +316,24 @@ export default function Auction() {
   if (!auction) {
     return (
       <AppShell title="Auction">
-        <div className="p-6 text-center" style={{ color: 'var(--text-2)' }}>Loading…</div>
+        <div className="p-6 max-w-lg mx-auto text-center space-y-3">
+          {loadError && (
+            <p className="text-sm text-red-400">{loadError}</p>
+          )}
+          <p className="mb-2" style={{ color: 'var(--text-2)' }}>
+            {loadError ? 'Could not load auction' : 'No active auction'}
+          </p>
+          {isAdmin ? (
+            <button type="button" className="as-btn-primary" onClick={createAuction} disabled={creating}>
+              {creating ? 'Creating…' : 'Create new auction'}
+            </button>
+          ) : (
+            <p className="text-sm" style={{ color: 'var(--text-2)' }}>Ask an admin to start an auction.</p>
+          )}
+          <button type="button" className="as-btn-ghost text-sm" onClick={() => { setListLoaded(false); loadAuction(); }}>
+            Retry
+          </button>
+        </div>
       </AppShell>
     );
   }
@@ -325,7 +349,6 @@ export default function Auction() {
           </div>
         )}
 
-        {/* Status bar */}
         <div className="flex flex-wrap items-center gap-2 justify-between">
           <div className="flex items-center gap-2">
             <span className="text-xs uppercase tracking-wide px-2 py-0.5 rounded" style={{ background: 'var(--surface-2)', color: 'var(--text-2)' }}>
@@ -351,10 +374,8 @@ export default function Auction() {
           </div>
         </div>
 
-        {/* Main block */}
         <div className="grid md:grid-cols-3 gap-4">
           <div className="md:col-span-2 space-y-3">
-            {/* Player card */}
             <div className="rounded-xl p-4 border" style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}>
               {currentPlayer ? (
                 <div className="flex gap-4 items-start">
@@ -392,7 +413,6 @@ export default function Auction() {
               )}
             </div>
 
-            {/* Controls */}
             {isAdmin && (auction.status === 'live' || auction.status === 'paused') && (
               <div className="flex flex-wrap gap-2 items-center">
                 <button type="button" onClick={sellPlayer} className="as-btn-primary text-sm">Sell</button>
@@ -408,7 +428,6 @@ export default function Auction() {
               </div>
             )}
 
-            {/* Team bid buttons */}
             {(auction.status === 'live') && (
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
                 {teams.map((tm, i) => {
@@ -438,7 +457,6 @@ export default function Auction() {
               </div>
             )}
 
-            {/* Admin manual bid */}
             {isAdmin && auction.status === 'live' && (
               <div className="flex flex-wrap gap-2 items-end">
                 <div>
@@ -456,7 +474,6 @@ export default function Auction() {
               </div>
             )}
 
-            {/* Bid history dropdown */}
             {bidHistory.length > 0 && (
               <div className="rounded-lg border" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
                 <button type="button" className="w-full text-left px-3 py-2 text-sm flex justify-between" onClick={() => setShowBidHistory(v => !v)}>
@@ -477,9 +494,7 @@ export default function Auction() {
             )}
           </div>
 
-          {/* Right column */}
           <div className="space-y-3">
-            {/* Settings — draft only */}
             {isAdmin && auction.status === 'draft' && (
               <div className="rounded-xl p-3 border" style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}>
                 <p className="text-xs mb-2 font-medium" style={{ color: 'var(--text-2)' }}>Settings only in draft</p>
@@ -497,7 +512,6 @@ export default function Auction() {
               </div>
             )}
 
-            {/* Available players */}
             {isAdmin && (auction.status === 'live' || auction.status === 'paused' || auction.status === 'draft') && (
               <div className="rounded-xl p-3 border" style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}>
                 <p className="text-xs mb-2 font-medium" style={{ color: 'var(--text-2)' }}>Available ({availablePlayers.length})</p>
@@ -513,7 +527,6 @@ export default function Auction() {
               </div>
             )}
 
-            {/* Unsold */}
             {feat('auctionRecallUnsold') && isAdmin && unsoldPlayers.length > 0 && (
               <div className="rounded-xl p-3 border" style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}>
                 <p className="text-xs mb-2 font-medium" style={{ color: 'var(--text-2)' }}>Unsold ({unsoldPlayers.length})</p>
@@ -529,7 +542,6 @@ export default function Auction() {
               </div>
             )}
 
-            {/* Sold list */}
             <div className="rounded-xl p-3 border" style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}>
               <p className="text-xs mb-2 font-medium" style={{ color: 'var(--text-2)' }}>Sold ({soldList.length})</p>
               <ul className="max-h-40 overflow-auto text-sm space-y-1">
