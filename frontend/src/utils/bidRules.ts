@@ -35,7 +35,9 @@ export function nextMinBid(
   auction?: { bidRules?: BidRule[]; bidIncrement?: number } | null
 ): number {
   const step = getIncrement(currentBid, auction);
-  return hasBidder ? currentBid + step : Math.max(currentBid, 0);
+  // Always step up from displayed price (base or last bid). First team click = base + increment.
+  if (!currentBid || currentBid <= 0) return step;
+  return currentBid + step;
 }
 
 /**
