@@ -1,11 +1,11 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode, useMemo } from 'react';
 import api from '../services/api';
 
 interface User {
   id: string;
   name: string;
   email: string;
-  role: 'admin' | 'team_manager' | 'viewer';
+  role: 'admin' | 'team_manager' | 'viewer' | 'developer';
   teamId: string | null;
 }
 
@@ -15,6 +15,7 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<void>;
   logout: () => void;
   isLoading: boolean;
+  isAdmin: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -33,6 +34,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .catch(() => {
           localStorage.removeItem('token');
           setToken(null);
+          setUser(null);
         })
         .finally(() => setIsLoading(false));
     } else {
@@ -54,8 +56,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   };
 
+  const isAdmin = useMemo(
+    () => user?.role === 'admin' || user?.role === 'developer',
+    [user]
+  );
+
   return (
-    <AuthContext.Provider value={{ user, token, login, logout, isLoading }}>
+    <AuthContext.Provider value={{ user, token, login, logout, isLoading, isAdmin }}>
       {children}
     </AuthContext.Provider>
   );
