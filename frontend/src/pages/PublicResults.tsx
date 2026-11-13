@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import api, { getSocketUrl } from '../services/api';
+import { publicApi, getSocketUrl } from '../services/api';
 import ThemeToggle from '../components/ThemeToggle';
 
 interface Team {
@@ -41,7 +41,7 @@ export default function PublicResults() {
     const load = async () => {
       try {
         try { await fetch(`${getSocketUrl()}/api/health`); } catch {}
-        const activeRes = await api.get('/auctions/public/active');
+        const activeRes = await publicApi.get('/auctions/public/active');
         const active = activeRes.data;
         if (!active?.id) {
           setError('No auction data available yet.');
@@ -49,12 +49,18 @@ export default function PublicResults() {
           return;
         }
         setAuctionName(active.name || 'Auction Results');
-        const [soldRes, teamsRes] = await Promise.all([
-          api.get(`/auctions/${active.id}/public/sold`),
-          api.get('/teams')
-        ]);
-        setSold(soldRes.data || []);
+        let soldData: SoldRecord[] = [];
+        try {
+          const soldRes = await publicApi.get(`/auctions/${active.id}/public/sold`);
+          soldData = soldRes.data || [];
+        } catch {
+          const soldRes = await publicApi.get('/auctions/public/sold');
+          soldData = soldRes.data || [];
+        }
+        const teamsRes = await publicApi.get('/teams');
+        setSold(soldData);
         setTeams(teamsRes.data || []);
+        setError('');
       } catch {
         setError('Could not load results. Backend may be waking up — refresh in 30s.');
       } finally {
@@ -74,13 +80,13 @@ export default function PublicResults() {
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-transparent text-[var(--text-primary)]">
-      <header className="glass border-b border-gray-200 dark:border-slate-800 sticky top-0 z-10 print:shadow-none">
+      <header className="glass border-b border-gray-200 dark:border-slate-800 sticky top-0 z-10 print:hidden">
         <div className="max-w-5xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-2">
           <div>
             <h1 className="text-lg font-bold text-[var(--text-primary)]">📊 {auctionName}</h1>
             <p className="text-xs text-gray-500 dark:text-[var(--text-secondary)]">Public results · no login required</p>
           </div>
-          <div className="flex items-center gap-2 print:hidden">
+          <div className="flex items-center gap-2">
             <ThemeToggle />
             <Link to="/live" className="text-sm text-indigo-400">Live</Link>
           </div>
@@ -88,7 +94,9 @@ export default function PublicResults() {
       </header>
 
       <main className="max-w-5xl mx-auto px-4 py-6 space-y-6">
-        {error && <div className="p-4 rounded-lg bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-300 text-sm">{error}</div>}
+        {error && (
+          <div className="p-4 rounded-lg bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-300 text-sm">{error}</div>
+        )}
 
         <section className="glass rounded-xl p-4">
           <h2 className="font-semibold text-[var(--text-primary)] mb-3">Teams & squads</h2>
@@ -137,9 +145,11 @@ export default function PublicResults() {
                 </div>
               );
             })}
+            {teams.length === 0 && !error && (
+              <div className="text-sm text-[var(--text-secondary)] py-4 text-center">No teams yet.</div>
+            )}
           </div>
         </section>
-
       </main>
     </div>
   );
