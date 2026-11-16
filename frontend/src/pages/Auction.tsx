@@ -77,7 +77,7 @@ export default function Auction() {
       setAvailablePlayers(availRes.data || []);
       setTeams(teamsRes.data || []);
       const bids = (bidsRes.data || []) as any[];
-      const teamMap = Object.fromEntries((teamsRes.data || []).map((t: Team) => [t.id, t.name]));
+      const teamMap = Object.fromEntries((teamsRes.data || []).map((tm: Team) => [tm.id, tm.name]));
       setBidHistory(bids.slice().sort((a: any, b: any) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()).slice(0, 40)
         .map((b: any) => ({ id: b.id, amount: Number(b.amount) || 0, teamId: b.teamId, teamName: teamMap[b.teamId] || b.teamId })));
     } catch (e) { console.error(e); }
@@ -646,11 +646,11 @@ export default function Auction() {
           </div>
         )}
 
-        {isAdmin && (
+        {isAdmin && auction.status === 'draft' && (
           <div className="glass p-4">
             <div className="font-semibold text-[14px] mb-2">Auction settings & bid ladder</div>
             <p className="text-[12px] mb-3" style={{ color: 'var(--text-2)' }}>
-              Name, timer (0 = off), and bid ladder. Changes apply on save.
+              Name, timer (0 = off), and bid ladder. Only available before Start.
             </p>
             <BidRulesEditor
               showTimer={true}
