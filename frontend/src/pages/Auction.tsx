@@ -90,7 +90,9 @@ export default function Auction() {
       setAuction(a);
       if (a?.id) {
         await resyncLists(a.id);
-        if (a.currentPlayerId) {
+        if (a.status === 'completed') {
+          setCurrentPlayer(null);
+        } else if (a.currentPlayerId) {
           const players = await api.get('/players');
           const p = (players.data || []).find((x: Player) => x.id === a.currentPlayerId);
           setCurrentPlayer(p || null);
@@ -360,24 +362,6 @@ export default function Auction() {
     } catch (err: any) { showMsg('error', err.response?.data?.error || 'Recall failed'); }
   };
 
-  useEffect(() => {
-    if (!isAdmin || !auction || !feat('auctionKeyboard')) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-      const k = e.key.toLowerCase();
-      if (k === 's') { e.preventDefault(); sellPlayer(); }
-      else if (k === 'u') { e.preventDefault(); markUnsold(); }
-      else if (k === 'r') { e.preventDefault(); nextRandomPlayer(); }
-      else if (k === 'z') { e.preventDefault(); undoLastBid(); }
-      else if (/^[1-9]$/.test(k)) {
-        const idx = Number(k) - 1;
-        if (teams[idx]) { e.preventDefault(); quickBid(teams[idx]); }
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [auction, teams, currentPlayer, isAdmin, features.auctionKeyboard]);
-
   const createAuction = async () => {
     setCreating(true);
     try {
@@ -388,7 +372,12 @@ export default function Auction() {
         bidRules: DEFAULT_BID_RULES
       });
       setAuction(res.data);
-      showMsg('success', 'Auction created (draft)');
+      setCurrentPlayer(null);
+      setSoldList([]);
+      setUnsoldPlayers([]);
+      setBidHistory([]);
+      showMsg('success', 'New auction created (draft) — set timer then Start');
+      if (res.data?.id) await resyncLists(res.data.id);
     } catch (err: any) { showMsg('error', err.response?.data?.error || 'Create failed'); }
     finally { setCreating(false); }
   };
@@ -506,12 +495,20 @@ export default function Auction() {
             {auction.status === 'draft' && (
               <button type="button" onClick={nextRandomPlayer} className="as-btn-ghost text-sm" disabled={!!auction.currentPlayerId}>Random</button>
             )}
+            {auction.status === 'completed' && (
+              <>
+                <span className="text-[13px]" style={{ color: 'var(--text-2)' }}>This auction has ended.</span>
+                <button type="button" onClick={createAuction} className="as-btn-primary text-sm" disabled={creating}>
+                  {creating ? 'Creating…' : 'Start new auction'}
+                </button>
+              </>
+            )}
           </div>
         )}
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5">
           <div className="glass overflow-hidden min-h-[280px]">
-            {currentPlayer ? (
+            {currentPlayer && auction.status !== 'completed' ? (
               <div className="p-6 h-full flex flex-col">
                 <div className="text-[13px] mb-2" style={{ color: 'var(--text-2)' }}>Now auctioning</div>
                 <div className="flex gap-4 items-start flex-1">
@@ -542,7 +539,11 @@ export default function Auction() {
               </div>
             ) : (
               <div className="p-10 h-full flex items-center justify-center text-[14px]" style={{ color: 'var(--text-2)' }}>
-                {auction.status === 'draft' ? 'Start the auction, then draw a player' : 'Waiting for next player…'}
+                {auction.status === 'completed'
+                  ? 'Auction completed — start a new one to continue'
+                  : auction.status === 'draft'
+                    ? 'Start the auction, then draw a player'
+                    : 'Waiting for next player…'}
               </div>
             )}
           </div>
@@ -615,7 +616,7 @@ export default function Auction() {
                     {p.photoUrl ? <img src={p.photoUrl} alt="" className="w-8 h-8 rounded-full object-cover" /> : <span className="w-8 h-8 rounded-full flex items-center justify-center text-xs" style={{ background: 'var(--fill)' }}>P</span>}
                     <div><div className="font-medium truncate">{p.name}</div><div className="text-[12px]" style={{ color: 'var(--text-2)' }}>{p.role} · ₹{(p.basePrice || 0).toLocaleString()}</div></div>
                   </div>
-                  {isAdmin && <button type="button" className="as-btn-ghost text-sm" disabled={!!auction.currentPlayerId} onClick={() => selectPlayer(p.id)}>Select</button>}
+                  {isAdmin && auction.status !== 'completed' && <button type="button" className="as-btn-ghost text-sm" disabled={!!auction.currentPlayerId} onClick={() => selectPlayer(p.id)}>Select</button>}
                 </div>
               ))}
               {filteredAvailable.length === 0 && <div className="p-6 text-center text-[14px]" style={{ color: 'var(--text-2)' }}>No available players</div>}
