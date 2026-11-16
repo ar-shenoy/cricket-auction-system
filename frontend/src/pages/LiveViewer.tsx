@@ -45,16 +45,16 @@ export default function LiveViewer() {
     try {
       const aRes = await publicApi.get('/auctions/public/active').catch(() => ({ data: null }));
       const a = aRes.data;
-      setAuction(a);
+      setAuction(a || null);
+      if (a?.currentPlayer) setCurrent(a.currentPlayer);
+      else if (a?.currentPlayerId) {
+        try {
+          const pr = await publicApi.get(`/players/public/${a.currentPlayerId}`);
+          setCurrent(pr.data);
+        } catch { setCurrent(null); }
+      } else setCurrent(null);
+
       if (a?.id) {
-        if (a.currentPlayerId) {
-          try {
-            const pr = await publicApi.get(`/players/public/${a.currentPlayerId}`);
-            setCurrent(pr.data || null);
-          } catch {
-            setCurrent(null);
-          }
-        } else setCurrent(null);
         await loadSold(a.id);
         await loadBids(a.id);
       }
@@ -67,21 +67,20 @@ export default function LiveViewer() {
 
   useEffect(() => {
     load();
-    startKeepAliveInterval();
+    return startKeepAliveInterval();
   }, [load]);
 
   useEffect(() => {
     if (!auction?.id) return;
+    if (joinedIdRef.current === auction.id && socketRef.current) return;
     if (socketRef.current) {
       try { socketRef.current.disconnect(); } catch {}
-      socketRef.current = null;
     }
     const socket = io(getSocketUrl(), {
       transports: ['websocket', 'polling'],
       reconnection: true,
       reconnectionAttempts: 40,
       reconnectionDelay: 400,
-      reconnectionDelayMax: 4000,
       timeout: 10000
     });
     socketRef.current = socket;
@@ -95,7 +94,7 @@ export default function LiveViewer() {
       if (data.player) setCurrent(data.player);
       setLastBid({
         amount: data.auction?.currentBid ?? data.player?.basePrice ?? 0,
-        teamName: data.auction?.currentBidderName || undefined
+        teamName: data.auction?.currentBidderName || data.team?.name
       });
       setLastSale(null);
     });
@@ -130,10 +129,6 @@ export default function LiveViewer() {
           price: r.price ?? r.sold?.soldPrice ?? 0
         });
         if (r.player) setCurrent(r.player);
-        setLastBid(prev => prev ? { ...prev, amount: r.price ?? r.sold?.soldPrice ?? prev.amount } : {
-          amount: r.price ?? r.sold?.soldPrice ?? 0,
-          teamName: r.team?.name
-        });
       }
       if (data.auction?.id) {
         loadSold(data.auction.id);
@@ -151,28 +146,23 @@ export default function LiveViewer() {
     };
   }, [auction?.id]);
 
-  // Fallback poll so Live never goes fully stale if socket drops
+  // Soft poll so public live stays in sync if socket drops
   useEffect(() => {
     if (!auction?.id) return;
     const id = window.setInterval(async () => {
       try {
         const aRes = await publicApi.get('/auctions/public/active');
         const a = aRes.data;
-        if (a?.id) {
-          setAuction((prev: any) => {
-            if (!prev) return a;
-            if (prev.currentPlayerId !== a.currentPlayerId || prev.currentBid !== a.currentBid || prev.status !== a.status) {
-              return a;
-            }
-            return prev;
-          });
-          if (a.currentPlayerId) {
-            publicApi.get(`/players/public/${a.currentPlayerId}`).then(pr => {
-              if (pr.data) setCurrent(pr.data);
-            }).catch(() => {});
-          } else {
-            setCurrent(null);
-          }
+        if (!a?.id) return;
+        setAuction((prev: any) => {
+          if (!prev) return a;
+          if (prev.currentPlayerId !== a.currentPlayerId || prev.currentBid !== a.currentBid || prev.status !== a.status) return a;
+          return prev;
+        });
+        if (a.currentPlayerId) {
+          publicApi.get(`/players/public/${a.currentPlayerId}`).then(pr => {
+            if (pr.data) setCurrent(pr.data);
+          }).catch(() => {});
         }
       } catch { /* ignore */ }
     }, 4000);
@@ -187,76 +177,103 @@ export default function LiveViewer() {
     );
   }
 
-  if (!auction) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center gap-4 p-6" style={{ background: 'var(--bg)' }}>
-        <p style={{ color: 'var(--text-2)' }}>No live auction right now.</p>
-        <Link to="/" className="as-btn-primary">Home</Link>
-      </div>
-    );
-  }
-
   return (
-    <div className="min-h-screen" style={{ background: 'var(--bg)', color: 'var(--text)' }}>
-      <div className="max-w-3xl mx-auto p-4 space-y-4">
-        <div className="flex items-center justify-between gap-2">
+    <div className="min-h-screen pb-10" style={{ background: 'var(--bg)', color: 'var(--text-primary)' }}>
+      <header className="glass-nav sticky top-0 z-40">
+        <div className="max-w-lg mx-auto px-4 py-3 flex items-center justify-between">
           <div>
-            <div className="text-[12px] uppercase tracking-wide" style={{ color: 'var(--text-2)' }}>{auction.status}</div>
-            <h1 className="text-[22px] font-semibold">{auction.name || 'Live Auction'}</h1>
+            <div className="text-[15px] font-semibold">{auction?.name || 'Live Auction'}</div>
+            <div className="text-xs text-[var(--text-secondary)] capitalize">{auction?.status || 'idle'} · Public View</div>
           </div>
-          <ThemeToggle />
+          <div className="flex items-center gap-3">
+            <Link to="/results" className="text-[13px]" style={{ color: 'var(--accent)' }}>View report</Link>
+            <Link to="/results" className="text-[13px] text-[var(--text-secondary)]">Squads & results</Link>
+            <ThemeToggle />
+          </div>
         </div>
+      </header>
 
-        <div className="glass p-5 min-h-[220px]">
-          {current ? (
-            <div className="flex gap-4 items-start">
-              {current.photoUrl ? (
-                <img src={current.photoUrl} alt="" className="w-24 h-24 rounded-2xl object-cover" />
-              ) : (
-                <div className="w-24 h-24 rounded-2xl flex items-center justify-center text-3xl" style={{ background: 'var(--fill)' }}>🏏</div>
-              )}
-              <div className="min-w-0 flex-1">
-                <div className="text-[13px]" style={{ color: 'var(--text-2)' }}>Now auctioning</div>
-                <h2 className="text-[26px] font-semibold leading-tight">{current.name}</h2>
-                <div className="text-[13px] mt-1" style={{ color: 'var(--text-2)' }}>{current.role}{current.city ? ` · ${current.city}` : ''}</div>
-                <div className="mt-4">
-                  <div className="text-[12px]" style={{ color: 'var(--text-2)' }}>Current bid</div>
-                  <div className="text-[30px] font-semibold tabular-nums" style={{ color: 'var(--accent)' }}>
-                    ₹{Number(auction.currentBid || lastBid?.amount || 0).toLocaleString()}
-                  </div>
-                  {lastBid?.teamName && (
-                    <div className="text-[13px] mt-1" style={{ color: 'var(--text-2)' }}>by {lastBid.teamName}</div>
-                  )}
+      <main className="max-w-lg mx-auto p-4 space-y-4">
+        {current && (
+          <div className={`glass rounded-[22px] p-6 text-center relative overflow-hidden ${
+            lastSale?.status === 'Sold' ? 'as-anim-sold' :
+            lastSale?.status === 'Unsold' ? 'as-anim-unsold' :
+            lastSale?.status === 'Recalled' ? 'as-anim-recall' : ''
+          }`}>
+            {current.photoUrl ? (
+              <img
+                src={current.photoUrl}
+                alt=""
+                className="w-44 h-44 sm:w-56 sm:h-56 md:w-64 md:h-64 rounded-3xl object-cover mx-auto mb-4 shadow-xl"
+              />
+            ) : (
+              <div className="w-44 h-44 sm:w-56 sm:h-56 md:w-64 md:h-64 rounded-3xl mx-auto mb-4 flex items-center justify-center text-6xl bg-black/5 dark:bg-white/10">
+                🏏
+              </div>
+            )}
+            <div className="text-xs uppercase tracking-wide text-[var(--text-secondary)]">
+              {lastSale ? lastSale.status : 'Now auctioning'}
+            </div>
+            <h2 className="text-3xl sm:text-4xl font-semibold mt-1">{current.name}</h2>
+            <p className="text-[var(--text-secondary)] mt-1">
+              {current.role || 'Player'}{current.city ? ` · ${current.city}` : ''}
+            </p>
+
+            {lastSale ? (
+              <div className="mt-6 inline-block glass-strong rounded-2xl px-6 py-3">
+                <div className={`text-2xl sm:text-3xl font-bold tracking-wide ${
+                  lastSale.status === 'Sold' ? 'text-emerald-400' :
+                  lastSale.status === 'Unsold' ? 'text-amber-400' : 'text-sky-400'
+                }`}>
+                  {lastSale.status === 'Sold' ? 'SOLD' : lastSale.status === 'Unsold' ? 'UNSOLD' : lastSale.status.toUpperCase()}
+                </div>
+                {lastSale.status === 'Sold' && (
+                  <>
+                    <div className="text-xl font-semibold tabular-nums mt-1" style={{ color: 'var(--accent)' }}>
+                      ₹{Number(lastSale.price).toLocaleString()}
+                    </div>
+                    <div className="text-sm text-[var(--text-secondary)] mt-1">→ {lastSale.teamName}</div>
+                  </>
+                )}
+              </div>
+            ) : (
+              <div className="mt-6 inline-block glass-strong rounded-2xl px-6 py-3">
+                <div className="text-xs text-[var(--text-secondary)] uppercase">Current bid</div>
+                <div className="text-3xl sm:text-4xl font-semibold text-amber-600 dark:text-amber-400 tabular-nums">
+                  ₹{Number(lastBid?.amount ?? auction?.currentBid ?? current?.basePrice ?? 0).toLocaleString()}
+                </div>
+                <div className="text-sm text-[var(--text-secondary)] mt-1">
+                  Leading:{' '}
+                  <span className="font-medium">{lastBid?.teamName || '—'}</span>
                 </div>
               </div>
-            </div>
-          ) : (
-            <div className="py-10 text-center text-[14px]" style={{ color: 'var(--text-2)' }}>
-              Waiting for next player…
-            </div>
-          )}
+            )}
+          </div>
+        )}
 
-          {lastSale && (
-            <div className={`mt-4 p-3 rounded-xl text-[14px] ${lastSale.status === 'Sold' ? 'as-anim-sold' : 'as-anim-unsold'}`} style={{ background: 'var(--fill)' }}>
-              <strong>{lastSale.status}</strong> — {lastSale.playerName}
-              {lastSale.status === 'Sold' ? ` → ${lastSale.teamName} for ₹${Number(lastSale.price).toLocaleString()}` : ''}
-            </div>
-          )}
-        </div>
+        {!current && (
+          <div className="glass rounded-[22px] p-10 text-center text-[var(--text-secondary)]">
+            Waiting for next player…
+          </div>
+        )}
 
-        <div className="flex gap-2">
-          <button type="button" className={showBidHistory ? 'as-btn-primary text-sm' : 'as-btn-ghost text-sm'} onClick={() => setShowBidHistory(v => !v)}>
+        <div className="flex gap-2 items-center">
+          <button
+            type="button"
+            className={showBidHistory ? 'as-btn-primary text-sm' : 'as-btn-ghost text-sm'}
+            onClick={() => setShowBidHistory(v => !v)}
+          >
             Bids ({bidHistory.length})
           </button>
-          <span className="text-[13px] self-center" style={{ color: 'var(--text-2)' }}>Sold {soldList.length}</span>
+          <span className="text-[13px] text-[var(--text-secondary)]">Sold {soldList.length}</span>
         </div>
 
         {showBidHistory && (
-          <div className="glass overflow-hidden max-h-64 overflow-y-auto">
+          <div className="glass rounded-2xl overflow-hidden max-h-64 overflow-y-auto">
             {bidHistory.length === 0 ? (
-              <div className="p-4 text-[13px]" style={{ color: 'var(--text-2)' }}>No bids yet</div>
+              <div className="p-4 text-[13px] text-[var(--text-secondary)]">No bids yet</div>
             ) : bidHistory.map(b => (
-              <div key={b.id} className="flex justify-between px-4 py-2 border-b" style={{ borderColor: 'var(--separator)' }}>
+              <div key={b.id} className="flex justify-between px-4 py-2.5 border-b border-white/5">
                 <span>{b.teamName || b.teamId}</span>
                 <span className="font-semibold tabular-nums">₹{Number(b.amount).toLocaleString()}</span>
               </div>
@@ -264,26 +281,32 @@ export default function LiveViewer() {
           </div>
         )}
 
-        <div className="glass overflow-hidden">
-          <div className="px-4 py-2 text-[13px] font-medium" style={{ color: 'var(--text-2)' }}>Sold players</div>
+        <div className="glass rounded-2xl overflow-hidden">
+          <div className="px-4 py-2.5 text-[13px] font-medium text-[var(--text-secondary)]">Sold players</div>
           {soldList.length === 0 ? (
-            <div className="p-4 text-[13px]" style={{ color: 'var(--text-2)' }}>None yet</div>
+            <div className="p-4 text-[13px] text-[var(--text-secondary)]">None yet</div>
           ) : (
-            <table>
-              <thead><tr><th>Player</th><th>Team</th><th>Price</th></tr></thead>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-[var(--text-secondary)]">
+                  <th className="px-4 py-2">Player</th>
+                  <th className="px-2 py-2">Team</th>
+                  <th className="px-4 py-2 text-right">Price</th>
+                </tr>
+              </thead>
               <tbody>
                 {soldList.map(s => (
-                  <tr key={s.id}>
-                    <td className="font-medium">{s.player?.name || '—'}</td>
-                    <td>{s.team?.name || '—'}</td>
-                    <td className="tabular-nums">₹{Number(s.soldPrice || 0).toLocaleString()}</td>
+                  <tr key={s.id} className="border-t border-white/5">
+                    <td className="px-4 py-2 font-medium">{s.player?.name || '—'}</td>
+                    <td className="px-2 py-2">{s.team?.name || '—'}</td>
+                    <td className="px-4 py-2 text-right tabular-nums">₹{Number(s.soldPrice || 0).toLocaleString()}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           )}
         </div>
-      </div>
+      </main>
     </div>
   );
 }
