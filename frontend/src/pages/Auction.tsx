@@ -5,6 +5,7 @@ import api, { getSocketUrl } from '../services/api';
 import { io, Socket } from 'socket.io-client';
 import { nextMinBid, DEFAULT_BID_RULES, BidRule } from '../utils/bidRules';
 import BidRulesEditor from '../components/BidRulesEditor';
+import { startKeepAliveInterval } from '../utils/keepAlive';
 
 interface Player { id: string; name: string; role: string; basePrice: number; city?: string; photoUrl?: string; previousPrice?: number; }
 interface Team { id: string; name: string; purse: number; remainingPurse: number; maxPlayers?: number | null; logoUrl?: string; }
@@ -43,13 +44,13 @@ export default function Auction() {
   const [message, setMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
   const [features, setFeatures] = useState<Record<string, boolean>>({});
   const [creating, setCreating] = useState(false);
-  const [adminBidTeamId, setAdminBidTeamId] = useState('');
   const [openPanel, setOpenPanel] = useState<'available' | 'sold' | 'unsold' | 'history' | null>('available');
   const [roleFilter, setRoleFilter] = useState('all');
   const [bidHistory, setBidHistory] = useState<{ id: string; amount: number; teamId: string; teamName: string }[]>([]);
   const [watchers, setWatchers] = useState(0);
   const socketRef = useRef<Socket | null>(null);
-  const timerFiredRef = useRef(false);
+  const timerDeadlineRef = useRef<number | null>(null);
+  const autoUnsoldRef = useRef(false);
   const [timerLeft, setTimerLeft] = useState<number | null>(null);
 
   const feat = (k: string) => features[k] !== false;
@@ -104,6 +105,7 @@ export default function Auction() {
   }, [resyncLists]);
 
   useEffect(() => { loadAuction(); }, [loadAuction]);
+  useEffect(() => startKeepAliveInterval(5 * 60 * 1000), []);
 
   useEffect(() => {
     const onFocus = () => {
@@ -116,48 +118,113 @@ export default function Auction() {
 
   useEffect(() => {
     if (!auction?.id) return;
-    const socket = io(getSocketUrl(), { transports: ['websocket', 'polling'], reconnection: true, reconnectionAttempts: 20, reconnectionDelay: 1000 });
+    const socket = io(getSocketUrl(), {
+      transports: ['websocket', 'polling'],
+      reconnection: true,
+      reconnectionAttempts: 30,
+      reconnectionDelay: 500,
+      reconnectionDelayMax: 3000,
+      timeout: 8000
+    });
     socketRef.current = socket;
     socket.emit('join-auction', auction.id);
+
     socket.on('new-bid', (payload: any) => {
       if (payload.auction) setAuction(payload.auction);
       if (payload.bid && payload.team) {
         setBidHistory(prev => [{ id: payload.bid.id, amount: payload.bid.amount, teamId: payload.team.id, teamName: payload.team.name }, ...prev].slice(0, 40));
       }
+      if (!payload.undo) {
+        const secs = Number(payload.auction?.bidTimerSeconds) || 0;
+        if (secs > 0) {
+          timerDeadlineRef.current = Date.now() + secs * 1000;
+          autoUnsoldRef.current = false;
+          setTimerLeft(secs);
+        }
+      }
       if (payload.undo && payload.auction?.id) resyncLists(payload.auction.id);
     });
+
     socket.on('player-selected', (payload: any) => {
       if (payload.auction) setAuction(payload.auction);
       if (payload.player) setCurrentPlayer(payload.player);
+      const secs = Number(payload.auction?.bidTimerSeconds) || 0;
+      if (secs > 0) {
+        timerDeadlineRef.current = Date.now() + secs * 1000;
+        autoUnsoldRef.current = false;
+        setTimerLeft(secs);
+      } else {
+        timerDeadlineRef.current = null;
+        setTimerLeft(null);
+      }
     });
+
     socket.on('player-sold', (payload: any) => {
       if (payload.auction) setAuction(payload.auction);
       setCurrentPlayer(null);
+      timerDeadlineRef.current = null;
+      setTimerLeft(null);
+      autoUnsoldRef.current = false;
       if (payload.auction?.id) resyncLists(payload.auction.id);
     });
+
     socket.on('auction-status', (a: Auction) => setAuction(a));
     socket.on('auction-started', (a: Auction) => setAuction(a));
-    socket.on('auction-ended', (a: Auction) => { setAuction(a); setCurrentPlayer(null); });
+    socket.on('auction-ended', (a: Auction) => { setAuction(a); setCurrentPlayer(null); timerDeadlineRef.current = null; setTimerLeft(null); });
     socket.on('watchers', (n: number) => setWatchers(n));
+
     return () => { socket.disconnect(); };
   }, [auction?.id, resyncLists]);
 
-  // Countdown — clamp to bidTimerSeconds (fixes clock skew showing 35s when set to 10)
+  // Local smooth countdown — no server-clock lag; auto-unsold at 0
   useEffect(() => {
-    const secs = Number(auction?.bidTimerSeconds) || 0;
-    if (!auction?.currentPlayerId || auction.status !== 'live' || secs <= 0 || !auction.timerEndsAt) {
+    if (!auction?.currentPlayerId || auction.status !== 'live') {
+      if (!auction?.currentPlayerId) {
+        timerDeadlineRef.current = null;
+        setTimerLeft(null);
+      }
+      return;
+    }
+    const secs = Number(auction.bidTimerSeconds) || 0;
+    if (secs <= 0) {
+      timerDeadlineRef.current = null;
       setTimerLeft(null);
       return;
     }
+    if (timerDeadlineRef.current == null) {
+      if (auction.timerEndsAt) {
+        const serverLeft = Math.ceil((new Date(auction.timerEndsAt).getTime() - Date.now()) / 1000);
+        const left = Math.max(0, Math.min(secs, serverLeft > 0 ? serverLeft : secs));
+        timerDeadlineRef.current = Date.now() + left * 1000;
+        setTimerLeft(left);
+      } else {
+        timerDeadlineRef.current = Date.now() + secs * 1000;
+        setTimerLeft(secs);
+      }
+      autoUnsoldRef.current = false;
+    }
     const tick = () => {
-      const end = new Date(auction.timerEndsAt!).getTime();
-      const raw = Math.ceil((end - Date.now()) / 1000);
-      setTimerLeft(Math.max(0, Math.min(secs, raw)));
+      const dl = timerDeadlineRef.current;
+      if (dl == null) return;
+      const left = Math.max(0, Math.ceil((dl - Date.now()) / 1000));
+      setTimerLeft(left);
+      if (left <= 0 && !autoUnsoldRef.current) {
+        autoUnsoldRef.current = true;
+        timerDeadlineRef.current = null;
+        if (isAdmin && auction?.id) {
+          api.post(`/auctions/${auction.id}/unsold`).then((res) => {
+            if (res.data?.auction) setAuction(res.data.auction);
+            setCurrentPlayer(null);
+            setTimerLeft(null);
+            resyncLists(auction.id);
+          }).catch(() => { autoUnsoldRef.current = false; });
+        }
+      }
     };
     tick();
-    const id = setInterval(tick, 200);
+    const id = setInterval(tick, 100);
     return () => clearInterval(id);
-  }, [auction?.timerEndsAt, auction?.status, auction?.currentPlayerId, auction?.bidTimerSeconds]);
+  }, [auction?.currentPlayerId, auction?.status, auction?.bidTimerSeconds, auction?.id, isAdmin, resyncLists]);
 
   const teamSoldCount = (teamId: string) => soldList.filter(s => s.teamId === teamId).length;
 
@@ -167,6 +234,12 @@ export default function Auction() {
       const res = await api.post(`/auctions/${auction.id}/bid`, { teamId, amount });
       setAuction(res.data.auction);
       setBidAmount(String(nextMinBid(res.data.auction.currentBid, true, res.data.auction)));
+      const secs = Number(res.data.auction?.bidTimerSeconds) || 0;
+      if (secs > 0) {
+        timerDeadlineRef.current = Date.now() + secs * 1000;
+        autoUnsoldRef.current = false;
+        setTimerLeft(secs);
+      }
     } catch (err: any) { showMsg('error', err.response?.data?.error || 'Bid failed'); }
   };
 
@@ -187,7 +260,8 @@ export default function Auction() {
       const res = await api.post(`/auctions/${auction.id}/sell`);
       if (res.data?.auction) setAuction(res.data.auction);
       setCurrentPlayer(null);
-      await resyncLists(auction.id);
+      timerDeadlineRef.current = null; setTimerLeft(null); autoUnsoldRef.current = false;
+      resyncLists(auction.id);
       showMsg('success', 'Sold');
     } catch (err: any) { showMsg('error', err.response?.data?.error || 'Sell failed'); }
   };
@@ -198,7 +272,8 @@ export default function Auction() {
       const res = await api.post(`/auctions/${auction.id}/unsold`);
       if (res.data?.auction) setAuction(res.data.auction);
       setCurrentPlayer(null);
-      await resyncLists(auction.id);
+      timerDeadlineRef.current = null; setTimerLeft(null); autoUnsoldRef.current = false;
+      resyncLists(auction.id);
       showMsg('info', 'Marked unsold');
     } catch (err: any) { showMsg('error', err.response?.data?.error || 'Unsold failed'); }
   };
@@ -209,7 +284,7 @@ export default function Auction() {
       const res = await api.post(`/auctions/${auction.id}/undo-last-bid`);
       setAuction(res.data.auction);
       showMsg('success', res.data.message || 'Bid undone');
-      await resyncLists(auction.id);
+      resyncLists(auction.id);
     } catch (err: any) { showMsg('error', err.response?.data?.error || 'Undo bid failed'); }
   };
 
@@ -219,8 +294,14 @@ export default function Auction() {
       const res = await api.post(`/auctions/${auction.id}/undo-last-sell`);
       setAuction(res.data.auction);
       if (res.data.player) setCurrentPlayer(res.data.player);
+      const secs = Number(res.data.auction?.bidTimerSeconds) || 0;
+      if (secs > 0) {
+        timerDeadlineRef.current = Date.now() + secs * 1000;
+        autoUnsoldRef.current = false;
+        setTimerLeft(secs);
+      }
       showMsg('success', res.data.message || 'Sale undone');
-      await resyncLists(auction.id);
+      resyncLists(auction.id);
     } catch (err: any) { showMsg('error', err.response?.data?.error || 'Undo sale failed'); }
   };
 
@@ -235,6 +316,12 @@ export default function Auction() {
       const res = await api.post(`/auctions/${auction.id}/next-random`);
       setAuction(res.data.auction);
       setCurrentPlayer(res.data.player);
+      const secs = Number(res.data.auction?.bidTimerSeconds) || 0;
+      if (secs > 0) {
+        timerDeadlineRef.current = Date.now() + secs * 1000;
+        autoUnsoldRef.current = false;
+        setTimerLeft(secs);
+      } else { timerDeadlineRef.current = null; setTimerLeft(null); }
       showMsg('info', `Random: ${res.data.player.name}`);
     } catch (err: any) { showMsg('error', err.response?.data?.error || 'No players'); }
   };
@@ -249,6 +336,12 @@ export default function Auction() {
       const res = await api.post(`/auctions/${auction.id}/select-player`, { playerId });
       setAuction(res.data.auction);
       setCurrentPlayer(res.data.player);
+      const secs = Number(res.data.auction?.bidTimerSeconds) || 0;
+      if (secs > 0) {
+        timerDeadlineRef.current = Date.now() + secs * 1000;
+        autoUnsoldRef.current = false;
+        setTimerLeft(secs);
+      } else { timerDeadlineRef.current = null; setTimerLeft(null); }
     } catch (err: any) { showMsg('error', err.response?.data?.error || 'Select failed'); }
   };
 
@@ -258,7 +351,13 @@ export default function Auction() {
       const res = await api.post(`/auctions/${auction.id}/recall-unsold`, {});
       setAuction(res.data.auction);
       if (res.data.player) setCurrentPlayer(res.data.player);
-      await resyncLists(auction.id);
+      const secs = Number(res.data.auction?.bidTimerSeconds) || 0;
+      if (secs > 0) {
+        timerDeadlineRef.current = Date.now() + secs * 1000;
+        autoUnsoldRef.current = false;
+        setTimerLeft(secs);
+      }
+      resyncLists(auction.id);
     } catch (err: any) { showMsg('error', err.response?.data?.error || 'Recall failed'); }
   };
 
@@ -327,6 +426,7 @@ export default function Auction() {
       const res = await api.post(`/auctions/${auction.id}/end`);
       setAuction(res.data);
       setCurrentPlayer(null);
+      timerDeadlineRef.current = null; setTimerLeft(null);
       showMsg('success', 'Auction ended');
     } catch (err: any) { showMsg('error', err.response?.data?.error || 'End failed'); }
   };
@@ -410,7 +510,6 @@ export default function Auction() {
           </div>
         )}
 
-        {/* 2-column old UI: player cell + bid panel */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5">
           <div className="glass overflow-hidden min-h-[280px]">
             {currentPlayer ? (
@@ -434,7 +533,9 @@ export default function Auction() {
                       <div className="text-[32px] font-semibold tabular-nums" style={{ color: 'var(--accent)' }}>₹{(auction.currentBid || 0).toLocaleString()}</div>
                       <div className="text-[13px] mt-1" style={{ color: 'var(--text-2)' }}>by {currentBidderName}</div>
                       {timerLeft != null && (
-                        <div className={`mt-2 text-[20px] font-semibold tabular-nums ${timerLeft <= 5 ? 'text-red-400' : ''}`}>⏱ {timerLeft}s</div>
+                        <div className={`mt-2 text-[22px] font-semibold tabular-nums ${timerLeft <= 5 ? 'text-red-400' : ''}`}>
+                          ⏱ {timerLeft}s
+                        </div>
                       )}
                     </div>
                   </div>
@@ -501,14 +602,17 @@ export default function Auction() {
 
         {openPanel === 'available' && (
           <div className="glass overflow-hidden">
-            <div className="p-3 flex gap-2 border-b" style={{ borderColor: 'var(--separator)' }}>
-              <select value={roleFilter} onChange={e => setRoleFilter(e.target.value)} className="as-input w-auto text-sm">
-                <option value="all">All roles</option>
-                <option value="bat">Batsman</option>
-                <option value="bowl">Bowler</option>
-                <option value="ar">All-rounder</option>
-                <option value="wk">Wicket-keeper</option>
-              </select>
+            <div className="p-3 flex flex-wrap gap-2 border-b" style={{ borderColor: 'var(--separator)' }}>
+              {([['all', 'All'], ['bat', 'Bat'], ['bowl', 'Bowl'], ['ar', 'AR'], ['wk', 'WK']] as const).map(([k, label]) => (
+                <button
+                  key={k}
+                  type="button"
+                  onClick={() => setRoleFilter(k)}
+                  className={roleFilter === k ? 'as-btn-primary text-sm !px-3 !py-1.5' : 'as-btn-ghost text-sm !px-3 !py-1.5'}
+                >
+                  {label}
+                </button>
+              ))}
             </div>
             <div className="max-h-72 overflow-y-auto">
               {filteredAvailable.map(p => (
