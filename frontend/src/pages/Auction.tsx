@@ -53,7 +53,6 @@ export default function Auction() {
   const [timerLeft, setTimerLeft] = useState<number | null>(null);
 
   const feat = (k: string) => features[k] !== false;
-
   const showMsg = (type: 'success' | 'error' | 'info', text: string) => {
     setMessage({ type, text });
     setTimeout(() => setMessage(null), 4000);
@@ -78,9 +77,8 @@ export default function Auction() {
       setTeams(teamsRes.data || []);
       const bids = (bidsRes.data || []) as any[];
       const teamMap = Object.fromEntries((teamsRes.data || []).map((t: Team) => [t.id, t.name]));
-      const sorted = bids.slice().sort((a: any, b: any) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()).slice(0, 40)
-        .map((b: any) => ({ id: b.id, amount: Number(b.amount) || 0, teamId: b.teamId, teamName: teamMap[b.teamId] || b.teamId }));
-      setBidHistory(sorted);
+      setBidHistory(bids.slice().sort((a: any, b: any) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()).slice(0, 40)
+        .map((b: any) => ({ id: b.id, amount: Number(b.amount) || 0, teamId: b.teamId, teamName: teamMap[b.teamId] || b.teamId })));
     } catch (e) { console.error(e); }
   }, []);
 
@@ -96,9 +94,7 @@ export default function Auction() {
           const p = (players.data || []).find((x: Player) => x.id === a.currentPlayerId);
           setCurrentPlayer(p || null);
         } else setCurrentPlayer(null);
-      } else {
-        setCurrentPlayer(null);
-      }
+      } else setCurrentPlayer(null);
     } catch (e) {
       console.error(e);
       setAuction(null);
@@ -136,36 +132,32 @@ export default function Auction() {
     });
     socket.on('player-sold', (payload: any) => {
       if (payload.auction) setAuction(payload.auction);
-      // Keep current player visible until next player is drawn
-      const r = payload.result;
-      if (r?.player) setCurrentPlayer(r.player);
+      setCurrentPlayer(null);
       if (payload.auction?.id) resyncLists(payload.auction.id);
     });
     socket.on('auction-status', (a: Auction) => setAuction(a));
     socket.on('auction-started', (a: Auction) => setAuction(a));
-    socket.on('auction-ended', (a: Auction) => setAuction(a));
+    socket.on('auction-ended', (a: Auction) => { setAuction(a); setCurrentPlayer(null); });
     socket.on('watchers', (n: number) => setWatchers(n));
     return () => { socket.disconnect(); };
   }, [auction?.id, resyncLists]);
 
+  // Countdown — clamp to bidTimerSeconds (fixes clock skew showing 35s when set to 10)
   useEffect(() => {
-    if (!feat('auctionTimer') || !auction?.timerEndsAt || auction.status !== 'live' || !auction.currentPlayerId) {
+    const secs = Number(auction?.bidTimerSeconds) || 0;
+    if (!auction?.currentPlayerId || auction.status !== 'live' || secs <= 0 || !auction.timerEndsAt) {
       setTimerLeft(null);
       return;
     }
-    timerFiredRef.current = false;
     const tick = () => {
       const end = new Date(auction.timerEndsAt!).getTime();
-      const left = Math.max(0, Math.ceil((end - Date.now()) / 1000));
-      setTimerLeft(left);
-      if (feat('auctionTimer') && left <= 0 && !timerFiredRef.current && isAdmin) {
-        timerFiredRef.current = true;
-      }
+      const raw = Math.ceil((end - Date.now()) / 1000);
+      setTimerLeft(Math.max(0, Math.min(secs, raw)));
     };
     tick();
-    const id = setInterval(tick, 250);
+    const id = setInterval(tick, 200);
     return () => clearInterval(id);
-  }, [auction?.timerEndsAt, auction?.status, auction?.currentPlayerId, auction?.id, isAdmin, features.auctionTimer]);
+  }, [auction?.timerEndsAt, auction?.status, auction?.currentPlayerId, auction?.bidTimerSeconds]);
 
   const teamSoldCount = (teamId: string) => soldList.filter(s => s.teamId === teamId).length;
 
@@ -193,9 +185,8 @@ export default function Auction() {
     if (!auction) return;
     try {
       const res = await api.post(`/auctions/${auction.id}/sell`);
-      setAuction(res.data.auction);
-      if (res.data.result?.player) setCurrentPlayer(res.data.result.player);
-      else if (res.data.player) setCurrentPlayer(res.data.player);
+      if (res.data?.auction) setAuction(res.data.auction);
+      setCurrentPlayer(null);
       await resyncLists(auction.id);
       showMsg('success', 'Sold');
     } catch (err: any) { showMsg('error', err.response?.data?.error || 'Sell failed'); }
@@ -205,9 +196,8 @@ export default function Auction() {
     if (!auction) return;
     try {
       const res = await api.post(`/auctions/${auction.id}/unsold`);
-      setAuction(res.data.auction);
-      if (res.data.result?.player) setCurrentPlayer(res.data.result.player);
-      else if (res.data.player) setCurrentPlayer(res.data.player);
+      if (res.data?.auction) setAuction(res.data.auction);
+      setCurrentPlayer(null);
       await resyncLists(auction.id);
       showMsg('info', 'Marked unsold');
     } catch (err: any) { showMsg('error', err.response?.data?.error || 'Unsold failed'); }
@@ -236,12 +226,11 @@ export default function Auction() {
 
   const nextRandomPlayer = async () => {
     if (!auction) return;
-    // Block while a player is on the block (backend still has currentPlayerId)
     if (auction.currentPlayerId) {
       showMsg('error', 'Finish current player (Sell / Unsold) before drawing next');
       return;
     }
-    if (availablePlayers.length === 0) { showMsg('error', 'No approved players left — import & approve players first'); return; }
+    if (availablePlayers.length === 0) { showMsg('error', 'No approved players left'); return; }
     try {
       const res = await api.post(`/auctions/${auction.id}/next-random`);
       setAuction(res.data.auction);
@@ -310,12 +299,12 @@ export default function Auction() {
     if (!auction) return;
     const res = await api.put(`/auctions/${auction.id}/settings`, data);
     setAuction(res.data);
-    showMsg('success', 'Settings saved');
+    showMsg('success', `Settings saved · timer ${data.bidTimerSeconds === 0 ? 'off' : data.bidTimerSeconds + 's'}`);
   };
 
   const startAuction = async () => {
     if (!auction) return;
-    if (availablePlayers.length === 0) { showMsg('error', 'No approved players — import & approve players first'); return; }
+    if (availablePlayers.length === 0) { showMsg('error', 'No approved players'); return; }
     try {
       const res = await api.post(`/auctions/${auction.id}/start`);
       setAuction(res.data);
@@ -349,9 +338,7 @@ export default function Auction() {
 
   const exportSquadsCsv = () => {
     const rows = [['Team', 'Player', 'Role', 'Price']];
-    soldList.forEach(s => {
-      rows.push([s.team?.name || '', s.player?.name || '', s.player?.role || '', String(s.soldPrice || 0)]);
-    });
+    soldList.forEach(s => rows.push([s.team?.name || '', s.player?.name || '', s.player?.role || '', String(s.soldPrice || 0)]));
     const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
     const a = document.createElement('a');
@@ -362,13 +349,10 @@ export default function Auction() {
 
   const filteredAvailable = availablePlayers.filter(p => roleFilter === 'all' || roleKey(p.role) === roleFilter);
   const currentBidder = teams.find(t => t.id === auction?.currentBidderTeamId);
+  const currentBidderName = currentBidder?.name || '—';
 
   if (loading) {
-    return (
-      <AppShell title="Auction">
-        <div className="glass p-8 text-center" style={{ color: 'var(--text-2)' }}>Loading…</div>
-      </AppShell>
-    );
+    return (<AppShell title="Auction"><div className="glass p-8 text-center" style={{ color: 'var(--text-2)' }}>Loading…</div></AppShell>);
   }
 
   if (!auction) {
@@ -396,7 +380,7 @@ export default function Auction() {
         )}
       </div>
 
-      <div className="space-y-4">
+      <div className="space-y-3.5">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <span className="text-[12px]" style={{ color: 'var(--text-2)' }}>{availablePlayers.length} available · {soldList.length} sold · {unsoldPlayers.length} unsold</span>
           <div className="flex flex-wrap gap-2">
@@ -411,91 +395,101 @@ export default function Auction() {
             {(auction.status === 'live' || auction.status === 'paused') && (
               <>
                 <button type="button" onClick={pauseAuction} className="as-btn-ghost text-sm">{auction.status === 'live' ? 'Pause' : 'Resume'}</button>
-                <button type="button" onClick={nextRandomPlayer} className="as-btn-ghost text-sm" disabled={!!auction.currentPlayerId} title={auction.currentPlayerId ? 'Finish current player first' : 'Draw random player'}>Random</button>
-                {feat('auctionRecallUnsold') && <button type="button" onClick={recallUnsold} className="as-btn-ghost text-sm">Recall unsold</button>}
+                <button type="button" onClick={nextRandomPlayer} className="as-btn-ghost text-sm" disabled={!!auction.currentPlayerId} title={auction.currentPlayerId ? 'Finish current player first' : 'Draw random'}>Random</button>
+                {feat('auctionRecallUnsold') && <button type="button" onClick={recallUnsold} className="as-btn-ghost text-sm" disabled={!!auction.currentPlayerId}>Recall unsold</button>}
                 <button type="button" onClick={undoLastBid} className="as-btn-ghost text-sm">Undo bid</button>
                 <button type="button" onClick={undoLastSale} className="as-btn-ghost text-sm">Undo last sell</button>
-                <button type="button" onClick={sellPlayer} className="as-btn-primary text-sm">Sell</button>
+                <button type="button" onClick={sellPlayer} className="as-btn-primary text-sm" style={{ background: '#30d158' }}>Sell</button>
                 <button type="button" onClick={markUnsold} className="as-btn-ghost text-sm">Unsold</button>
                 <button type="button" onClick={endAuction} className="as-btn-ghost text-sm" style={{ color: '#ff3b30' }}>End</button>
               </>
             )}
             {auction.status === 'draft' && (
-              <button type="button" onClick={nextRandomPlayer} className="as-btn-ghost text-sm" disabled={!!auction.currentPlayerId} title={auction.currentPlayerId ? 'Finish current player first' : 'Draw random player'}>Random</button>
+              <button type="button" onClick={nextRandomPlayer} className="as-btn-ghost text-sm" disabled={!!auction.currentPlayerId}>Random</button>
             )}
           </div>
         )}
 
-        {currentPlayer && (
-          <div className="glass p-5">
-            <div className="flex flex-col sm:flex-row gap-4 items-start">
-              {currentPlayer.photoUrl ? (
-                <img src={currentPlayer.photoUrl} alt="" className="w-32 h-32 sm:w-40 sm:h-40 rounded-2xl object-cover shrink-0 shadow-lg" />
-              ) : (
-                <div className="w-32 h-32 sm:w-40 sm:h-40 rounded-2xl flex items-center justify-center text-4xl shrink-0" style={{ background: 'var(--fill)' }}>🏏</div>
-              )}
-              <div className="flex-1 min-w-0">
-                <div className="text-[22px] font-semibold">{currentPlayer.name}</div>
-                <div className="text-[14px] mt-1" style={{ color: 'var(--text-2)' }}>{currentPlayer.role}{currentPlayer.city ? ` · ${currentPlayer.city}` : ''}</div>
-                <div className="mt-3 flex flex-wrap gap-3 items-baseline">
-                  <div>
-                    <span className="text-[12px]" style={{ color: 'var(--text-2)' }}>Base</span>
-                    <div className="text-[18px] font-semibold tabular-nums">₹{(currentPlayer.basePrice || 0).toLocaleString()}</div>
-                  </div>
-                  <div>
-                    <span className="text-[12px]" style={{ color: 'var(--text-2)' }}>Current bid</span>
-                    <div className="text-[28px] font-semibold tabular-nums" style={{ color: 'var(--accent)' }}>₹{(auction.currentBid || 0).toLocaleString()}</div>
-                  </div>
-                  {currentBidder && (
-                    <div>
-                      <span className="text-[12px]" style={{ color: 'var(--text-2)' }}>Leading</span>
-                      <div className="text-[16px] font-medium">{currentBidder.name}</div>
-                    </div>
+        {/* 2-column old UI: player cell + bid panel */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5">
+          <div className="glass overflow-hidden min-h-[280px]">
+            {currentPlayer ? (
+              <div className="p-6 h-full flex flex-col">
+                <div className="text-[13px] mb-2" style={{ color: 'var(--text-2)' }}>Now auctioning</div>
+                <div className="flex gap-4 items-start flex-1">
+                  {currentPlayer.photoUrl ? (
+                    <img src={currentPlayer.photoUrl} alt="" className="w-24 h-24 sm:w-28 sm:h-28 rounded-2xl object-cover shrink-0" />
+                  ) : (
+                    <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-2xl flex items-center justify-center text-3xl shrink-0" style={{ background: 'var(--fill)' }}>🏏</div>
                   )}
-                  {timerLeft != null && (
-                    <div>
-                      <span className="text-[12px]" style={{ color: 'var(--text-2)' }}>Timer</span>
-                      <div className="text-[22px] font-semibold tabular-nums" style={{ color: timerLeft <= 5 ? '#ff3b30' : 'var(--text)' }}>{timerLeft}s</div>
+                  <div className="min-w-0 flex-1">
+                    <h2 className="text-[26px] sm:text-[30px] font-semibold leading-tight">{currentPlayer.name}</h2>
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      <span className="glass-island text-[11px]">{currentPlayer.role}</span>
+                      {currentPlayer.city && <span className="glass-island text-[11px]">{currentPlayer.city}</span>}
+                      <span className="glass-island text-[11px]">Base ₹{(currentPlayer.basePrice || 0).toLocaleString()}</span>
                     </div>
-                  )}
+                    <div className="mt-5">
+                      <div className="text-[12px]" style={{ color: 'var(--text-2)' }}>Current bid</div>
+                      <div className="text-[32px] font-semibold tabular-nums" style={{ color: 'var(--accent)' }}>₹{(auction.currentBid || 0).toLocaleString()}</div>
+                      <div className="text-[13px] mt-1" style={{ color: 'var(--text-2)' }}>by {currentBidderName}</div>
+                      {timerLeft != null && (
+                        <div className={`mt-2 text-[20px] font-semibold tabular-nums ${timerLeft <= 5 ? 'text-red-400' : ''}`}>⏱ {timerLeft}s</div>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
-            </div>
+            ) : (
+              <div className="p-10 h-full flex items-center justify-center text-[14px]" style={{ color: 'var(--text-2)' }}>
+                {auction.status === 'draft' ? 'Start the auction, then draw a player' : 'Waiting for next player…'}
+              </div>
+            )}
           </div>
-        )}
 
-        {isAdmin && (auction.status === 'live' || auction.status === 'paused') && teams.length > 0 && (
-          <div className="glass p-4">
-            <div className="text-[13px] font-medium mb-3" style={{ color: 'var(--text-2)' }}>Quick bid (or keys 1–9)</div>
-            <div className="flex flex-wrap gap-2">
-              {teams.map((tm, idx) => {
-                const sold = teamSoldCount(tm.id);
-                const full = tm.maxPlayers != null && sold >= Number(tm.maxPlayers);
-                const leading = auction.currentBidderTeamId === tm.id;
-                return (
-                  <button
-                    key={tm.id}
-                    type="button"
-                    disabled={full || leading || auction.status === 'paused'}
-                    onClick={() => quickBid(tm)}
-                    className="as-btn-ghost text-sm flex items-center gap-2 !px-3"
-                    style={leading ? { outline: '2px solid var(--accent)' } : undefined}
-                  >
-                    {tm.logoUrl ? (
-                      <img src={tm.logoUrl} alt="" className="w-9 h-9 rounded-full object-cover shrink-0 bg-black/20" />
-                    ) : (
-                      <span className="w-9 h-9 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0" style={{ background: TEAM_COLORS[idx % TEAM_COLORS.length], color: '#fff' }}>{teamInitials(tm.name)}</span>
-                    )}
-                    <span className="text-left">
-                      <span className="block font-medium">{idx + 1}. {tm.name}</span>
-                      <span className="block text-[11px]" style={{ color: 'var(--text-2)' }}>₹{tm.remainingPurse.toLocaleString()}{full ? ' · FULL' : ''}</span>
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
+          <div className="glass p-4 min-h-[280px]">
+            <div className="text-[13px] font-medium mb-3" style={{ color: 'var(--text-2)' }}>Teams · tap to bid</div>
+            {isAdmin && (auction.status === 'live' || auction.status === 'paused') ? (
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {teams.map((tm, idx) => {
+                  const sold = teamSoldCount(tm.id);
+                  const full = tm.maxPlayers != null && sold >= Number(tm.maxPlayers);
+                  const leading = auction.currentBidderTeamId === tm.id;
+                  return (
+                    <button key={tm.id} type="button" disabled={full || leading || auction.status === 'paused' || !currentPlayer}
+                      onClick={() => quickBid(tm)}
+                      className="flex items-center gap-2.5 rounded-2xl px-3 py-2.5 min-h-[56px] text-left"
+                      style={{ background: leading ? 'var(--accent)' : 'var(--fill)', color: leading ? '#fff' : 'var(--text)', opacity: full ? 0.5 : 1 }}>
+                      {tm.logoUrl ? (
+                        <img src={tm.logoUrl} alt="" className="w-10 h-10 rounded-xl object-cover shrink-0 bg-black/20" />
+                      ) : (
+                        <span className="w-10 h-10 rounded-xl flex items-center justify-center text-[12px] font-bold shrink-0" style={{ background: TEAM_COLORS[idx % TEAM_COLORS.length], color: '#fff' }}>{teamInitials(tm.name)}</span>
+                      )}
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-[12px] font-semibold truncate">{tm.name}</span>
+                        <span className="block text-[10px] opacity-80 tabular-nums">₹{tm.remainingPurse.toLocaleString()} · {sold}{tm.maxPlayers != null ? `/${tm.maxPlayers}` : ''}</span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {teams.map((tm, idx) => {
+                  const sold = teamSoldCount(tm.id);
+                  const leading = auction.currentBidderTeamId === tm.id;
+                  return (
+                    <div key={tm.id} className="flex items-center gap-2.5 rounded-2xl px-3 py-2.5 min-h-[56px]"
+                      style={{ background: leading ? 'var(--accent)' : 'var(--fill)', color: leading ? '#fff' : 'var(--text)' }}>
+                      {tm.logoUrl ? <img src={tm.logoUrl} alt="" className="w-10 h-10 rounded-xl object-cover" /> : <span className="w-10 h-10 rounded-xl flex items-center justify-center text-[12px] font-bold" style={{ background: TEAM_COLORS[idx % TEAM_COLORS.length], color: '#fff' }}>{teamInitials(tm.name)}</span>}
+                      <span className="min-w-0"><span className="block text-[12px] font-semibold truncate">{tm.name}</span><span className="block text-[10px] opacity-80">₹{tm.remainingPurse.toLocaleString()}</span></span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
-        )}
+        </div>
 
         <div className="flex flex-wrap gap-2">
           {(['available', 'sold', 'unsold', 'history'] as const).map(k => (
@@ -507,7 +501,7 @@ export default function Auction() {
 
         {openPanel === 'available' && (
           <div className="glass overflow-hidden">
-            <div className="p-3 flex flex-wrap gap-2 items-center border-b" style={{ borderColor: 'var(--separator)' }}>
+            <div className="p-3 flex gap-2 border-b" style={{ borderColor: 'var(--separator)' }}>
               <select value={roleFilter} onChange={e => setRoleFilter(e.target.value)} className="as-input w-auto text-sm">
                 <option value="all">All roles</option>
                 <option value="bat">Batsman</option>
@@ -516,81 +510,41 @@ export default function Auction() {
                 <option value="wk">Wicket-keeper</option>
               </select>
             </div>
-            {filteredAvailable.length === 0 ? (
-              <div className="p-6 text-center text-[14px]" style={{ color: 'var(--text-2)' }}>No available players</div>
-            ) : (
-              <div className="max-h-72 overflow-y-auto divide-y" style={{ borderColor: 'var(--separator)' }}>
-                {filteredAvailable.map(p => (
-                  <div key={p.id} className="flex items-center justify-between gap-2 px-4 py-2.5">
-                    <div className="flex items-center gap-2 min-w-0">
-                      {p.photoUrl ? <img src={p.photoUrl} alt="" className="w-8 h-8 rounded-full object-cover" /> : <span className="w-8 h-8 rounded-full flex items-center justify-center text-xs" style={{ background: 'var(--fill)' }}>P</span>}
-                      <div className="min-w-0">
-                        <div className="font-medium truncate">{p.name}</div>
-                        <div className="text-[12px]" style={{ color: 'var(--text-2)' }}>{p.role} · ₹{(p.basePrice || 0).toLocaleString()}</div>
-                      </div>
-                    </div>
-                    {isAdmin && (
-                      <button type="button" className="as-btn-ghost text-sm shrink-0" disabled={!!auction.currentPlayerId} onClick={() => selectPlayer(p.id)}>Select</button>
-                    )}
+            <div className="max-h-72 overflow-y-auto">
+              {filteredAvailable.map(p => (
+                <div key={p.id} className="flex items-center justify-between gap-2 px-4 py-2.5 border-b" style={{ borderColor: 'var(--separator)' }}>
+                  <div className="flex items-center gap-2 min-w-0">
+                    {p.photoUrl ? <img src={p.photoUrl} alt="" className="w-8 h-8 rounded-full object-cover" /> : <span className="w-8 h-8 rounded-full flex items-center justify-center text-xs" style={{ background: 'var(--fill)' }}>P</span>}
+                    <div><div className="font-medium truncate">{p.name}</div><div className="text-[12px]" style={{ color: 'var(--text-2)' }}>{p.role} · ₹{(p.basePrice || 0).toLocaleString()}</div></div>
                   </div>
-                ))}
-              </div>
-            )}
+                  {isAdmin && <button type="button" className="as-btn-ghost text-sm" disabled={!!auction.currentPlayerId} onClick={() => selectPlayer(p.id)}>Select</button>}
+                </div>
+              ))}
+              {filteredAvailable.length === 0 && <div className="p-6 text-center text-[14px]" style={{ color: 'var(--text-2)' }}>No available players</div>}
+            </div>
           </div>
         )}
 
         {openPanel === 'sold' && (
           <div className="glass overflow-hidden">
-            {soldList.length === 0 ? (
-              <div className="p-6 text-center text-[14px]" style={{ color: 'var(--text-2)' }}>No sold players yet</div>
-            ) : (
-              <table>
-                <thead><tr><th>Player</th><th>Team</th><th>Price</th></tr></thead>
-                <tbody>
-                  {soldList.map(s => (
-                    <tr key={s.id}>
-                      <td className="font-medium">{s.player?.name || s.playerId}</td>
-                      <td>{s.team?.name || '—'}</td>
-                      <td className="tabular-nums">₹{Number(s.soldPrice || 0).toLocaleString()}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            {soldList.length === 0 ? <div className="p-6 text-center text-[14px]" style={{ color: 'var(--text-2)' }}>No sold players yet</div> : (
+              <table><thead><tr><th>Player</th><th>Team</th><th>Price</th></tr></thead>
+              <tbody>{soldList.map(s => (<tr key={s.id}><td className="font-medium">{s.player?.name || s.playerId}</td><td>{s.team?.name || '—'}</td><td className="tabular-nums">₹{Number(s.soldPrice || 0).toLocaleString()}</td></tr>))}</tbody></table>
             )}
           </div>
         )}
 
         {openPanel === 'unsold' && (
-          <div className="glass overflow-hidden">
-            {unsoldPlayers.length === 0 ? (
-              <div className="p-6 text-center text-[14px]" style={{ color: 'var(--text-2)' }}>No unsold players</div>
-            ) : (
-              <div className="max-h-72 overflow-y-auto">
-                {unsoldPlayers.map(p => (
-                  <div key={p.id} className="flex items-center justify-between px-4 py-2 border-b" style={{ borderColor: 'var(--separator)' }}>
-                    <span className="font-medium">{p.name}</span>
-                    <span className="text-[13px]" style={{ color: 'var(--text-2)' }}>{p.role}</span>
-                  </div>
-                ))}
-              </div>
-            )}
+          <div className="glass overflow-hidden max-h-72 overflow-y-auto">
+            {unsoldPlayers.length === 0 ? <div className="p-6 text-center text-[14px]" style={{ color: 'var(--text-2)' }}>No unsold players</div> :
+              unsoldPlayers.map(p => (<div key={p.id} className="flex justify-between px-4 py-2 border-b" style={{ borderColor: 'var(--separator)' }}><span className="font-medium">{p.name}</span><span className="text-[13px]" style={{ color: 'var(--text-2)' }}>{p.role}</span></div>))}
           </div>
         )}
 
         {openPanel === 'history' && (
-          <div className="glass overflow-hidden">
-            {bidHistory.length === 0 ? (
-              <div className="p-6 text-center text-[14px]" style={{ color: 'var(--text-2)' }}>No bids yet</div>
-            ) : (
-              <div className="max-h-72 overflow-y-auto">
-                {bidHistory.map(b => (
-                  <div key={b.id} className="flex items-center justify-between px-4 py-2 border-b" style={{ borderColor: 'var(--separator)' }}>
-                    <span>{b.teamName}</span>
-                    <span className="font-semibold tabular-nums">₹{Number(b.amount).toLocaleString()}</span>
-                  </div>
-                ))}
-              </div>
-            )}
+          <div className="glass overflow-hidden max-h-72 overflow-y-auto">
+            {bidHistory.length === 0 ? <div className="p-6 text-center text-[14px]" style={{ color: 'var(--text-2)' }}>No bids yet</div> :
+              bidHistory.map(b => (<div key={b.id} className="flex justify-between px-4 py-2 border-b" style={{ borderColor: 'var(--separator)' }}><span>{b.teamName}</span><span className="font-semibold tabular-nums">₹{Number(b.amount).toLocaleString()}</span></div>))}
           </div>
         )}
 
@@ -598,10 +552,10 @@ export default function Auction() {
           <div className="glass p-4">
             <div className="font-semibold text-[14px] mb-2">Auction settings & bid ladder</div>
             <BidRulesEditor
+              showTimer={true}
               initialRules={auction.bidRules}
               initialTimer={auction.bidTimerSeconds}
               initialName={auction.name}
-              showTimer={feat('auctionTimer')}
               onSave={saveSettings}
             />
           </div>
