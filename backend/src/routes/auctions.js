@@ -44,9 +44,7 @@ function nextMinBid(currentBid, hasBidder, auction) {
 
 function emitAuction(io, auctionId, event, payload) {
   if (!io) return;
-  // Room name MUST match server join: auction-${id}
   if (auctionId) io.to(`auction-${auctionId}`).emit(event, payload);
-  // Also broadcast so public live viewers still update if join lagged
   io.emit(event, payload);
 }
 
@@ -62,16 +60,17 @@ router.get('/', authMiddleware, (req, res) => {
 
 router.get('/active', authMiddleware, (req, res) => {
   const auctions = getAuctions();
-  const active = auctions.find(a => a.status === 'live' || a.status === 'paused' || a.status === 'draft') ||
-    auctions.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0] || null;
+  // Prefer live/paused/draft — never auto-pick a completed auction as "active"
+  const active = auctions.find(a => a.status === 'live' || a.status === 'paused' || a.status === 'draft')
+    || null;
   res.json(active);
 });
 
 router.get('/public/active', (req, res) => {
   const auctions = getAuctions();
-  const active = auctions.find(a => a.status === 'live' || a.status === 'paused') ||
-    auctions.find(a => a.status === 'draft') ||
-    auctions.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0] || null;
+  const active = auctions.find(a => a.status === 'live' || a.status === 'paused')
+    || auctions.find(a => a.status === 'draft')
+    || null;
   res.json(active);
 });
 
@@ -162,8 +161,6 @@ router.post('/:id/next-random', authMiddleware, requireRole('admin'), (req, res)
   if (!auction) return res.status(404).json({ error: 'Auction not found' });
   if (auction.currentPlayerId) return res.status(400).json({ error: 'Finish current player first' });
   const soldIds = new Set(getSoldPlayers().map(s => s.playerId));
-  const available = getPlayers().filter(p => p.status === 'Approved' && !soldIds.has(p.id) && p.auctionStatus !== 'Unsold');
-  // include unsold for random pool? typically available = approved not sold
   const pool = getPlayers().filter(p => p.status === 'Approved' && !soldIds.has(p.id));
   if (!pool.length) return res.status(400).json({ error: 'No available players' });
   const player = pool[Math.floor(Math.random() * pool.length)];
@@ -293,7 +290,6 @@ router.post('/:id/undo-last-sell', authMiddleware, requireRole('admin'), (req, r
     .sort((a, b) => new Date(b.soldAt || 0) - new Date(a.soldAt || 0));
   if (!sold.length) return res.status(400).json({ error: 'No sales to undo' });
   const last = sold[0];
-  // remove sold record
   const all = getSoldPlayers();
   const idx = all.findIndex(s => s.id === last.id);
   if (idx >= 0) { all.splice(idx, 1); persist(); }
