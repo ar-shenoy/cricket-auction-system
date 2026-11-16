@@ -51,8 +51,9 @@ export default function LiveViewer() {
         try {
           const pr = await publicApi.get(`/players/public/${a.currentPlayerId}`);
           setCurrent(pr.data);
-        } catch { setCurrent(null); }
-      } else setCurrent(null);
+        } catch { /* keep previous if any */ }
+      }
+      // Do NOT clear current when currentPlayerId is null — keep card until next player-selected
 
       if (a?.id) {
         await loadSold(a.id);
@@ -128,6 +129,7 @@ export default function LiveViewer() {
           teamName: r.team?.name || '—',
           price: r.price ?? r.sold?.soldPrice ?? 0
         });
+        // Keep player card on screen until next player-selected
         if (r.player) setCurrent(r.player);
       }
       if (data.auction?.id) {
@@ -146,7 +148,7 @@ export default function LiveViewer() {
     };
   }, [auction?.id]);
 
-  // Soft poll so public live stays in sync if socket drops
+  // Soft poll — only switch player when server has a NEW currentPlayerId; never clear after sold
   useEffect(() => {
     if (!auction?.id) return;
     const id = window.setInterval(async () => {
@@ -160,9 +162,13 @@ export default function LiveViewer() {
           return prev;
         });
         if (a.currentPlayerId) {
-          publicApi.get(`/players/public/${a.currentPlayerId}`).then(pr => {
-            if (pr.data) setCurrent(pr.data);
-          }).catch(() => {});
+          setCurrent(prev => {
+            if (prev?.id === a.currentPlayerId) return prev;
+            publicApi.get(`/players/public/${a.currentPlayerId}`).then(pr => {
+              if (pr.data) setCurrent(pr.data);
+            }).catch(() => {});
+            return prev;
+          });
         }
       } catch { /* ignore */ }
     }, 4000);
