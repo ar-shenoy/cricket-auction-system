@@ -205,7 +205,8 @@ export default function Teams() {
         canvas.toBlob(b => (b ? resolve(b) : reject(new Error('crop failed'))), 'image/jpeg', 0.9)
       );
       const fd = new FormData();
-      fd.append('image', blob, 'logo.jpg');
+      // Backend expects field name "file" (multer.single('file'))
+      fd.append('file', blob, 'logo.jpg');
       const res = await api.post('/upload/image', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
       const url = res.data?.url || res.data?.path || '';
       setForm(f => ({ ...f, logoUrl: url }));
@@ -323,7 +324,7 @@ export default function Teams() {
 
       {showModal && (
         <div className="fixed inset-0 z-40 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.55)' }}>
-          <div className="glass p-5 w-full max-w-md">
+          <div className="glass p-5 w-full max-w-md max-h-[90vh] overflow-y-auto">
             <h3 className="font-semibold text-[17px] mb-3">{editing ? 'Edit team' : 'Create team'}</h3>
             <form onSubmit={handleSubmit} className="space-y-3">
               <input required placeholder="Team name" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} className="as-input" />
@@ -332,10 +333,26 @@ export default function Teams() {
                 <input type="number" placeholder="Remaining purse" value={form.remainingPurse} onChange={e => setForm({ ...form, remainingPurse: e.target.value })} className="as-input" />
               )}
               <input type="number" placeholder="Max players (optional)" value={form.maxPlayers} onChange={e => setForm({ ...form, maxPlayers: e.target.value })} className="as-input" />
-              <div className="flex items-center gap-2">
-                {form.logoUrl ? <img src={form.logoUrl} alt="" className="w-10 h-10 rounded-lg object-cover" /> : null}
-                <button type="button" className="as-btn-ghost text-sm" onClick={() => logoFileRef.current?.click()}>Upload logo</button>
-                <input ref={logoFileRef} type="file" accept="image/*" onChange={handleLogoFile} className="hidden" />
+              <div className="space-y-2">
+                <label className="text-[12px]" style={{ color: 'var(--text-2)' }}>Logo URL or upload</label>
+                <input
+                  type="url"
+                  placeholder="https://… logo image URL"
+                  value={form.logoUrl}
+                  onChange={e => setForm({ ...form, logoUrl: e.target.value })}
+                  className="as-input"
+                />
+                <div className="flex items-center gap-2">
+                  {form.logoUrl ? (
+                    <img src={form.logoUrl} alt="" className="w-10 h-10 rounded-lg object-cover" onError={e => { (e.target as HTMLImageElement).style.opacity = '0.3'; }} />
+                  ) : (
+                    <span className="w-10 h-10 rounded-lg flex items-center justify-center text-[11px]" style={{ background: 'var(--fill)' }}>Logo</span>
+                  )}
+                  <button type="button" className="as-btn-ghost text-sm" onClick={() => logoFileRef.current?.click()}>
+                    Upload from device
+                  </button>
+                  <input ref={logoFileRef} type="file" accept="image/*" onChange={handleLogoFile} className="hidden" />
+                </div>
               </div>
               {!editing && (
                 <>
