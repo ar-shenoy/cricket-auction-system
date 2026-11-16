@@ -24,7 +24,12 @@ export default function LiveViewer() {
 
   const loadSold = async (auctionId: string) => {
     try {
-      const res = await publicApi.get(`/auctions/${auctionId}/public/sold`);
+      let res;
+      try {
+        res = await publicApi.get(`/auctions/${auctionId}/public/sold`);
+      } catch {
+        res = await publicApi.get('/auctions/public/sold');
+      }
       setSoldList((res.data || []).slice().reverse());
     } catch { /* ignore */ }
   };
@@ -107,15 +112,19 @@ export default function LiveViewer() {
 
     socket.on('player-sold', (data: any) => {
       if (data.auction) setAuction(data.auction);
-      setCurrent(null);
-      setLastBid(null);
       const r = data.result;
       if (r) {
+        const status = r.status || 'Sold';
         setLastSale({
-          status: r.status || 'Sold',
+          status,
           playerName: r.player?.name || 'Player',
           teamName: r.team?.name || '—',
           price: r.price ?? r.sold?.soldPrice ?? 0
+        });
+        if (r.player) setCurrent(r.player);
+        setLastBid(prev => prev ? { ...prev, amount: r.price ?? r.sold?.soldPrice ?? prev.amount } : {
+          amount: r.price ?? r.sold?.soldPrice ?? 0,
+          teamName: r.team?.name
         });
       }
       if (data.auction?.id) {
@@ -159,23 +168,12 @@ export default function LiveViewer() {
       </header>
 
       <main className="max-w-lg mx-auto p-4 space-y-4">
-        {lastSale && !current && (
-          <div className="glass rounded-[22px] p-5 text-center">
-            <div className="text-xs uppercase tracking-wide text-[var(--text-secondary)]">{lastSale.status}</div>
-            <div className="text-2xl font-semibold mt-1">
-              {lastSale.playerName}
-              {lastSale.status === 'Sold' && <span className="text-[var(--text-secondary)] font-normal"> → {lastSale.teamName}</span>}
-            </div>
-            {lastSale.status === 'Sold' && (
-              <div className="text-xl font-semibold tabular-nums mt-2" style={{ color: 'var(--accent)' }}>
-                ₹{Number(lastSale.price).toLocaleString()}
-              </div>
-            )}
-          </div>
-        )}
-
         {current && (
-          <div className="glass rounded-[22px] p-6 text-center">
+          <div className={`glass rounded-[22px] p-6 text-center relative overflow-hidden ${
+            lastSale?.status === 'Sold' ? 'as-anim-sold' :
+            lastSale?.status === 'Unsold' ? 'as-anim-unsold' :
+            lastSale?.status === 'Recalled' ? 'as-anim-recall' : ''
+          }`}>
             {current.photoUrl ? (
               <img
                 src={current.photoUrl}
@@ -187,27 +185,49 @@ export default function LiveViewer() {
                 🏏
               </div>
             )}
-            <div className="text-xs uppercase tracking-wide text-[var(--text-secondary)]">Now auctioning</div>
+            <div className="text-xs uppercase tracking-wide text-[var(--text-secondary)]">
+              {lastSale ? lastSale.status : 'Now auctioning'}
+            </div>
             <h2 className="text-3xl sm:text-4xl font-semibold mt-1">{current.name}</h2>
             <p className="text-[var(--text-secondary)] mt-1">
               {current.role || 'Player'}{current.city ? ` · ${current.city}` : ''}
             </p>
-            <div className="mt-6 inline-block glass-strong rounded-2xl px-6 py-3">
-              <div className="text-xs text-[var(--text-secondary)] uppercase">Current bid</div>
-              <div className="text-3xl sm:text-4xl font-semibold text-amber-600 dark:text-amber-400 tabular-nums">
-                ₹{Number(lastBid?.amount ?? auction?.currentBid ?? current?.basePrice ?? 0).toLocaleString()}
+
+            {lastSale ? (
+              <div className="mt-6 inline-block glass-strong rounded-2xl px-6 py-3">
+                <div className={`text-2xl sm:text-3xl font-bold tracking-wide ${
+                  lastSale.status === 'Sold' ? 'text-emerald-400' :
+                  lastSale.status === 'Unsold' ? 'text-amber-400' : 'text-sky-400'
+                }`}>
+                  {lastSale.status === 'Sold' ? 'SOLD' : lastSale.status === 'Unsold' ? 'UNSOLD' : lastSale.status.toUpperCase()}
+                </div>
+                {lastSale.status === 'Sold' && (
+                  <>
+                    <div className="text-xl font-semibold tabular-nums mt-1" style={{ color: 'var(--accent)' }}>
+                      ₹{Number(lastSale.price).toLocaleString()}
+                    </div>
+                    <div className="text-sm text-[var(--text-secondary)] mt-1">→ {lastSale.teamName}</div>
+                  </>
+                )}
               </div>
-              <div className="text-sm text-[var(--text-secondary)] mt-1">
-                Leading:{' '}
-                <span className="font-medium text-[var(--text-primary)]">
-                  {lastBid?.teamName || auction?.currentBidderName || '—'}
-                </span>
+            ) : (
+              <div className="mt-6 inline-block glass-strong rounded-2xl px-6 py-3">
+                <div className="text-xs text-[var(--text-secondary)] uppercase">Current bid</div>
+                <div className="text-3xl sm:text-4xl font-semibold text-amber-600 dark:text-amber-400 tabular-nums">
+                  ₹{Number(lastBid?.amount ?? auction?.currentBid ?? current?.basePrice ?? 0).toLocaleString()}
+                </div>
+                <div className="text-sm text-[var(--text-secondary)] mt-1">
+                  Leading:{' '}
+                  <span className="font-medium text-[var(--text-primary)]">
+                    {lastBid?.teamName || auction?.currentBidderName || '—'}
+                  </span>
+                </div>
               </div>
-            </div>
+            )}
           </div>
         )}
 
-        {!current && auction && !lastSale && (
+        {!current && auction && (
           <div className="glass rounded-[22px] p-8 text-center text-[var(--text-secondary)]">
             Waiting for next player…
           </div>
