@@ -41,6 +41,10 @@ export default function Players() {
   const [filter, setFilter] = useState('all');
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<string[]>([]);
+  const [bulkBasePrice, setBulkBasePrice] = useState('');
+  const [bulkRole, setBulkRole] = useState('');
+  const [bulkStatus, setBulkStatus] = useState('');
+  const [bulkBusy, setBulkBusy] = useState(false);
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<any>(null);
   const [showModal, setShowModal] = useState(false);
@@ -90,6 +94,50 @@ export default function Players() {
       loadData();
     } catch (err: any) {
       alert(err.response?.data?.error || 'Failed');
+    }
+  };
+
+  const handleBulkUpdate = async (fields: { basePrice?: string; role?: string; status?: string }) => {
+    if (!selected.length) return;
+    const payload: any = { ids: selected };
+    if (fields.basePrice !== undefined && fields.basePrice !== '') payload.basePrice = Number(fields.basePrice);
+    if (fields.role) payload.role = fields.role;
+    if (fields.status) payload.status = fields.status;
+    if (payload.basePrice === undefined && !payload.role && !payload.status) {
+      alert('Set a base price, role, or status first');
+      return;
+    }
+    setBulkBusy(true);
+    try {
+      const res = await api.post('/players/bulk-update', payload);
+      setSelected([]);
+      setBulkBasePrice('');
+      setBulkRole('');
+      setBulkStatus('');
+      loadData();
+      alert(`Updated ${res.data.updated || selected.length} player(s)`);
+    } catch (err: any) {
+      try {
+        let n = 0;
+        for (const id of selected) {
+          const body: any = {};
+          if (payload.basePrice !== undefined) body.basePrice = payload.basePrice;
+          if (payload.role) body.role = payload.role;
+          if (payload.status) body.status = payload.status;
+          await api.put(`/players/${id}`, body);
+          n++;
+        }
+        setSelected([]);
+        setBulkBasePrice('');
+        setBulkRole('');
+        setBulkStatus('');
+        loadData();
+        alert(`Updated ${n} player(s)`);
+      } catch (e2: any) {
+        alert(e2.response?.data?.error || err.response?.data?.error || 'Bulk update failed');
+      }
+    } finally {
+      setBulkBusy(false);
     }
   };
 
@@ -238,11 +286,51 @@ export default function Players() {
             <>
               <span className="text-[13px]" style={{ color: 'var(--text-2)' }}>{selected.length} selected</span>
               {selectedPendingCount > 0 && (
-                <button type="button" onClick={handleBulkApprove} className="as-btn-primary text-sm" style={{ background: '#30d158' }}>
+                <button type="button" onClick={handleBulkApprove} className="as-btn-primary text-sm" style={{ background: '#30d158' }} disabled={bulkBusy}>
                   Approve ({selectedPendingCount})
                 </button>
               )}
-              <button type="button" onClick={handleBulkDelete} className="as-btn-ghost text-sm" style={{ color: '#ff3b30' }}>
+              <button type="button" onClick={() => handleBulkUpdate({ status: 'Approved' })} className="as-btn-ghost text-sm" disabled={bulkBusy}>
+                Mark approved
+              </button>
+              <button type="button" onClick={() => handleBulkUpdate({ status: 'Rejected' })} className="as-btn-ghost text-sm" disabled={bulkBusy}>
+                Reject
+              </button>
+              <button type="button" onClick={() => handleBulkUpdate({ status: 'Pending' })} className="as-btn-ghost text-sm" disabled={bulkBusy}>
+                Set pending
+              </button>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <input
+                  type="number"
+                  min={0}
+                  value={bulkBasePrice}
+                  onChange={e => setBulkBasePrice(e.target.value)}
+                  placeholder="Base price"
+                  className="as-input w-28 text-sm"
+                  style={{ padding: '0.4rem 0.6rem' }}
+                />
+                <button
+                  type="button"
+                  disabled={bulkBusy || bulkBasePrice === ''}
+                  onClick={() => handleBulkUpdate({ basePrice: bulkBasePrice })}
+                  className="as-btn-primary text-sm"
+                >
+                  Set base
+                </button>
+              </div>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <select value={bulkRole} onChange={e => setBulkRole(e.target.value)} className="as-input w-auto text-sm" style={{ padding: '0.4rem 0.6rem' }}>
+                  <option value="">Role…</option>
+                  <option value="Batsman">Batsman</option>
+                  <option value="Bowler">Bowler</option>
+                  <option value="All-rounder">All-rounder</option>
+                  <option value="Wicket-keeper">Wicket-keeper</option>
+                </select>
+                <button type="button" disabled={bulkBusy || !bulkRole} onClick={() => handleBulkUpdate({ role: bulkRole })} className="as-btn-ghost text-sm">
+                  Set role
+                </button>
+              </div>
+              <button type="button" onClick={handleBulkDelete} className="as-btn-ghost text-sm" style={{ color: '#ff3b30' }} disabled={bulkBusy}>
                 Delete ({selected.length})
               </button>
               <button type="button" onClick={() => setSelected([])} className="as-btn-ghost text-sm">Clear</button>
