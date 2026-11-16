@@ -1,6 +1,5 @@
 const express = require('express');
 const multer = require('multer');
-const csv = require('csv-parser');
 const fs = require('fs');
 const path = require('path');
 const { getTeams, addTeam, updateTeam, getUsers, addUser, getSoldPlayers, persist } = require('../data/store');
@@ -27,7 +26,6 @@ if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
-/** Normalize CSV cell / header keys */
 function pick(row, keys) {
   for (const k of keys) {
     if (row[k] !== undefined && row[k] !== null && String(row[k]).trim() !== '') {
@@ -41,6 +39,58 @@ router.get('/', (req, res) => {
   const orgId = req.headers['x-org-id'] || req.query.orgId || null;
   const teams = orgId ? getTeams(orgId) : getTeams();
   res.json(teams);
+});
+
+router.post('/bulk-delete', authMiddleware, requireRole('admin'), (req, res) => {
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids : [];
+  if (!ids.length) return res.status(400).json({ error: 'ids required' });
+  const teams = getTeams();
+  const users = getUsers();
+  const sold = getSoldPlayers();
+  const locked = new Set(sold.map(s => s.teamId));
+  let deleted = 0;
+  const skipped = [];
+  for (const id of ids) {
+    if (locked.has(id)) { skipped.push(id); continue; }
+    const idx = teams.findIndex(x => x.id === id);
+    if (idx === -1) continue;
+    teams.splice(idx, 1);
+    for (let i = users.length - 1; i >= 0; i--) {
+      if (users[i].teamId === id && users[i].role === 'team_manager') users.splice(i, 1);
+    }
+    deleted++;
+  }
+  if (deleted > 0) persist();
+  res.json({ deleted, skipped });
+});
+
+router.post('/bulk-update', authMiddleware, requireRole('admin'), (req, res) => {
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids : [];
+  if (!ids.length) return res.status(400).json({ error: 'ids required' });
+  const { purse, maxPlayers } = req.body;
+  let updated = 0;
+  for (const id of ids) {
+    const patch = {};
+    if (purse !== undefined && purse !== null && purse !== '') {
+      const p = Number(purse);
+      if (!Number.isNaN(p)) {
+        patch.purse = p;
+        const team = getTeams().find(x => x.id === id);
+        if (team) {
+          const spent = Math.max(0, Number(team.purse || 0) - Number(team.remainingPurse || 0));
+          patch.remainingPurse = Math.max(0, p - spent);
+        }
+      }
+    }
+    if (maxPlayers !== undefined) {
+      patch.maxPlayers = (maxPlayers === null || maxPlayers === '') ? null : Number(maxPlayers);
+    }
+    if (Object.keys(patch).length) {
+      updateTeam(id, patch);
+      updated++;
+    }
+  }
+  res.json({ updated });
 });
 
 router.get('/:id', authMiddleware, (req, res) => {
@@ -78,176 +128,78 @@ router.post('/', authMiddleware, requireRole('admin'), async (req, res) => {
     });
 
     if (managerEmail && managerPassword) {
-      const users = getUsers();
-      if (!users.find(u => u.email.toLowerCase() === managerEmail.toLowerCase())) {
-        const hashed = await bcrypt.hash(managerPassword, 10);
-        addUser({
-          id: uuidv4(),
-          name: managerName || `${name} Manager`,
-          email: managerEmail.toLowerCase(),
-          password: hashed,
-          role: 'team_manager',
-          teamId: team.id,
-          orgId: req.user?.orgId || 'org-default'
-        });
-      }
+      const hash = await bcrypt.hash(String(managerPassword), 10);
+      addUser({
+        id: uuidv4(),
+        name: managerName || name + ' Manager',
+        email: managerEmail,
+        passwordHash: hash,
+        role: 'team_manager',
+        teamId: team.id,
+        orgId: req.user?.orgId || 'org-default',
+        createdAt: new Date().toISOString()
+      });
     }
 
     res.status(201).json(team);
-  } catch (err) {
-    console.error('Create team error:', err);
-    res.status(500).json({ error: 'Failed to create team' });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Create failed' });
   }
 });
 
-/**
- * CSV import — flexible headers (case-insensitive, spaces → underscores):
- *   name | team_name | team
- *   purse | purse_value | total_purse_value | budget | total_purse | purse_amount
- *   max_players | maxplayers | squad_size | max_player
- *   logo_url | logo | image (optional)
- *   manager_name | owner_name, manager_email | email, manager_password | password (optional)
- */
 router.post('/import', authMiddleware, requireRole('admin'), upload.single('file'), async (req, res) => {
-  if (!req.file) {
-    return res.status(400).json({ error: 'CSV file is required' });
-  }
-
-  const errors = [];
-  let imported = 0;
-  let skipped = 0;
-  const rows = [];
-
+  if (!req.file) return res.status(400).json({ error: 'CSV file required' });
   try {
-    await new Promise((resolve, reject) => {
-      fs.createReadStream(req.file.path)
-        .pipe(csv({
-          mapHeaders: ({ header }) =>
-            String(header || '')
-              .replace(/^\uFEFF/, '') // BOM
-              .trim()
-              .toLowerCase()
-              .replace(/\s+/g, '_')
-              .replace(/[^a-z0-9_]/g, '_')
-        }))
-        .on('data', (row) => rows.push(row))
-        .on('end', resolve)
-        .on('error', reject);
-    });
-  } catch (err) {
-    fs.unlink(req.file.path, () => {});
-    return res.status(500).json({ error: 'Failed to parse CSV', details: err.message });
-  }
-
-  for (const row of rows) {
-    try {
-      const name = pick(row, [
-        'name', 'team_name', 'team', 'teamname', 'franchise', 'franchise_name', 'team_name_'
-      ]);
-      const purseRaw = pick(row, [
-        'purse', 'purse_value', 'total_purse_value', 'total_purse', 'purse_amount',
-        'budget', 'total_budget', 'wallet', 'amount', 'purse_rs', 'purse_inr',
-        'pursevalue', 'totalpurse', 'totalpursevalue'
-      ]);
-      // Strip currency symbols / commas: "₹1,00,00,000" or "10000000"
-      const purse = Number(String(purseRaw).replace(/[₹$,\s]/g, '').replace(/inr/gi, ''));
-      const maxPlayersRaw = pick(row, [
-        'max_players', 'maxplayers', 'squad_size', 'max_player',
-        'max_squad', 'squad', 'players_limit', 'player_limit'
-      ]);
-      const maxPlayers = maxPlayersRaw !== '' ? Number(maxPlayersRaw) : null;
-      const managerName = pick(row, [
-        'manager_name', 'manager', 'owner', 'owner_name', 'ownername', 'managername'
-      ]);
-      const managerEmail = pick(row, [
-        'manager_email', 'email', 'manager_mail', 'owner_email', 'manageremail'
-      ]);
-      const managerPassword = pick(row, [
-        'manager_password', 'password', 'manager_pass', 'owner_password', 'managerpassword'
-      ]);
-      const logoUrl = pick(row, ['logo_url', 'logo', 'image', 'photo', 'photo_url', 'logourl']);
-
-      if (!name) {
-        skipped++;
-        errors.push({ row: '(empty)', reason: 'Missing team name' });
-        continue;
-      }
-      if (!Number.isFinite(purse) || purse <= 0) {
-        skipped++;
-        errors.push({
-          row: name,
-          reason: `Invalid or missing purse (got "${purseRaw || ''}"). Use purse / purse_value / total_purse_value / budget.`
-        });
-        continue;
-      }
-
-      const teams = getTeams(req.user?.orgId);
-      if (teams.find(t => t.name.toLowerCase() === name.toLowerCase())) {
-        skipped++;
-        errors.push({ row: name, reason: 'Team name already exists' });
-        continue;
-      }
-
-      const team = addTeam({
+    const text = fs.readFileSync(req.file.path, 'utf8');
+    fs.unlinkSync(req.file.path);
+    const lines = text.split(/\r?\n/).filter(l => l.trim());
+    if (lines.length < 2) return res.status(400).json({ error: 'Empty CSV' });
+    const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/["']/g, ''));
+    let imported = 0, skipped = 0;
+    const errors = [];
+    for (let i = 1; i < lines.length; i++) {
+      const cols = lines[i].split(',').map(c => c.trim().replace(/^"|"$/g, ''));
+      const row = {};
+      headers.forEach((h, j) => { row[h] = cols[j]; });
+      const name = pick(row, ['name', 'team', 'team_name']);
+      const purseStr = pick(row, ['purse', 'purse_value', 'budget']);
+      if (!name || !purseStr) { skipped++; errors.push({ row: i + 1, reason: 'missing name/purse' }); continue; }
+      const purse = Number(purseStr.replace(/[^0-9.]/g, ''));
+      if (Number.isNaN(purse)) { skipped++; errors.push({ row: i + 1, reason: 'bad purse' }); continue; }
+      if (getTeams().find(t => t.name.toLowerCase() === name.toLowerCase())) { skipped++; continue; }
+      const maxPlayersRaw = pick(row, ['max_players', 'maxplayers', 'squad_size']);
+      addTeam({
         id: uuidv4(),
         name,
         purse,
         remainingPurse: purse,
-        maxPlayers: maxPlayers != null && Number.isFinite(maxPlayers) && maxPlayers > 0 ? maxPlayers : null,
-        roleCaps: null,
-        logoUrl: logoUrl || '',
+        maxPlayers: maxPlayersRaw ? Number(maxPlayersRaw) : null,
+        logoUrl: pick(row, ['logo_url', 'logo']),
         orgId: req.user?.orgId || 'org-default',
         createdAt: new Date().toISOString()
       });
-
-      if (managerEmail && managerPassword) {
-        const users = getUsers();
-        if (!users.find(u => u.email.toLowerCase() === managerEmail.toLowerCase())) {
-          const hashed = await bcrypt.hash(managerPassword, 10);
-          addUser({
-            id: uuidv4(),
-            name: managerName || `${name} Manager`,
-            email: managerEmail.toLowerCase(),
-            password: hashed,
-            role: 'team_manager',
-            teamId: team.id,
-            orgId: req.user?.orgId || 'org-default'
-          });
-        }
-      }
-
       imported++;
-    } catch (err) {
-      skipped++;
-      errors.push({ reason: err.message });
     }
+    res.json({ imported, skipped, errors });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Import failed' });
   }
-
-  fs.unlink(req.file.path, () => {});
-  res.json({
-    message: 'Import completed',
-    imported,
-    skipped,
-    errors: errors.slice(0, 30)
-  });
 });
 
 router.put('/:id', authMiddleware, requireRole('admin'), (req, res) => {
-  const { name, purse, remainingPurse, maxPlayers, roleCaps, logoUrl } = req.body;
+  const team = getTeams().find(t => t.id === req.params.id);
+  if (!team) return res.status(404).json({ error: 'Team not found' });
+  const { name, purse, remainingPurse, maxPlayers, logoUrl, roleCaps } = req.body;
   const updates = {};
-  if (name) updates.name = name;
-  if (purse !== undefined) updates.purse = Number(purse);
-  if (remainingPurse !== undefined) updates.remainingPurse = Number(remainingPurse);
-  if (maxPlayers !== undefined) {
-    updates.maxPlayers = maxPlayers === null || maxPlayers === '' ? null : Number(maxPlayers);
-  }
-  if (roleCaps !== undefined) {
-    updates.roleCaps = roleCaps && typeof roleCaps === 'object' ? roleCaps : null;
-  }
-  if (logoUrl !== undefined) updates.logoUrl = String(logoUrl || '').trim();
-
-  const updated = updateTeam(req.params.id, updates);
-  if (!updated) return res.status(404).json({ error: 'Team not found' });
+  if (name != null) updates.name = String(name);
+  if (purse != null) updates.purse = Number(purse);
+  if (remainingPurse != null) updates.remainingPurse = Number(remainingPurse);
+  if (maxPlayers !== undefined) updates.maxPlayers = maxPlayers === null || maxPlayers === '' ? null : Number(maxPlayers);
+  if (logoUrl !== undefined) updates.logoUrl = logoUrl ? String(logoUrl) : '';
+  if (roleCaps !== undefined) updates.roleCaps = roleCaps;
+  const updated = updateTeam(team.id, updates);
   res.json(updated);
 });
 
