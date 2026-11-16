@@ -110,6 +110,15 @@ export default function Auction() {
   useEffect(() => { loadAuction(); }, [loadAuction]);
 
   useEffect(() => {
+    const onFocus = () => {
+      if (!auction?.id) return;
+      api.get('/teams').then(r => setTeams(r.data || [])).catch(() => {});
+    };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [auction?.id]);
+
+  useEffect(() => {
     if (!auction?.id) return;
     const socket = io(getSocketUrl(), { transports: ['websocket', 'polling'], reconnection: true, reconnectionAttempts: 20, reconnectionDelay: 1000 });
     socketRef.current = socket;
@@ -328,7 +337,7 @@ export default function Auction() {
     soldList.forEach(s => {
       rows.push([s.team?.name || '', s.player?.name || '', s.player?.role || '', String(s.soldPrice || 0)]);
     });
-    const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const csv = rows.map(r => r.map(c => `\"${String(c).replace(/\"/g, '\"\"')}\"`).join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
@@ -364,11 +373,13 @@ export default function Auction() {
 
   return (
     <AppShell title={auction.name || 'Auction'} subtitle={`${auction.status.toUpperCase()}${watchers ? ` · ${watchers} watching` : ''}`}>
-      {message && (
-        <div className="glass p-3 mb-4 text-[13px]" style={{ color: message.type === 'error' ? '#ff3b30' : message.type === 'success' ? '#30d158' : 'var(--accent)' }}>
-          {message.text}
-        </div>
-      )}
+      <div className="as-msg-slot">
+        {message && (
+          <div className="glass p-3 text-[13px]" style={{ color: message.type === 'error' ? '#ff3b30' : message.type === 'success' ? '#30d158' : 'var(--accent)' }}>
+            {message.text}
+          </div>
+        )}
+      </div>
 
       <div className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -400,7 +411,6 @@ export default function Auction() {
           </div>
         )}
 
-        {/* Player card — large photo */}
         <div className="glass p-5 min-h-[160px]">
           {currentPlayer ? (
             <div className="flex flex-col sm:flex-row gap-4 items-center sm:items-start">
@@ -436,7 +446,6 @@ export default function Auction() {
           )}
         </div>
 
-        {/* Team bid grid */}
         <div>
           <p className="text-[12px] mb-2" style={{ color: 'var(--text-2)' }}>Tap team = next bid step</p>
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
@@ -455,7 +464,11 @@ export default function Auction() {
                   style={{ background: 'var(--fill)', borderColor: 'var(--border)', opacity: disabled && !leading ? 0.55 : 1 }}
                 >
                   <div className="flex items-center gap-2">
-                    <span className="w-9 h-9 rounded-full flex items-center justify-center text-[11px] font-bold text-white shrink-0" style={{ background: TEAM_COLORS[idx % TEAM_COLORS.length] }}>{teamInitials(tm.name)}</span>
+                    {tm.logoUrl ? (
+                      <img src={tm.logoUrl} alt="" className="w-9 h-9 rounded-full object-cover shrink-0 bg-black/20" />
+                    ) : (
+                      <span className="w-9 h-9 rounded-full flex items-center justify-center text-[11px] font-bold text-white shrink-0" style={{ background: TEAM_COLORS[idx % TEAM_COLORS.length] }}>{teamInitials(tm.name)}</span>
+                    )}
                     <span className="font-medium text-[13px] truncate">{tm.name}</span>
                   </div>
                   <div className="text-[12px] mt-1.5 tabular-nums" style={{ color: 'var(--text-2)' }}>
@@ -469,7 +482,6 @@ export default function Auction() {
           </div>
         </div>
 
-        {/* Collapsible panels */}
         <div className="flex flex-wrap gap-2">
           {(['available', 'sold', 'unsold', 'history'] as const).map(key => (
             <button
