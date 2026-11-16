@@ -30,7 +30,7 @@ export default function LiveViewer() {
       } catch {
         res = await publicApi.get('/auctions/public/sold');
       }
-      setSoldList((res.data || []).slice().reverse());
+      setSoldList(res.data || []);
     } catch { /* ignore */ }
   };
 
@@ -38,27 +38,23 @@ export default function LiveViewer() {
     try {
       const res = await publicApi.get(`/auctions/${auctionId}/public/bids`);
       setBidHistory(res.data || []);
-    } catch { setBidHistory([]); }
+    } catch { /* ignore */ }
   };
 
   const load = useCallback(async () => {
     try {
       const aRes = await publicApi.get('/auctions/public/active').catch(() => ({ data: null }));
       const a = aRes.data;
-      setAuction(a || null);
-      if (a?.currentPlayer) setCurrent(a.currentPlayer);
-      else if (a?.currentPlayerId) {
-        try {
-          const pr = await publicApi.get(`/players/public/${a.currentPlayerId}`);
-          setCurrent(pr.data);
-        } catch { setCurrent(null); }
-      } else setCurrent(null);
-      if (a?.currentBid != null && a.currentBid > 0) {
-        setLastBid({ amount: a.currentBid, teamName: a.currentBidderName || undefined });
-      } else {
-        setLastBid(null);
-      }
+      setAuction(a);
       if (a?.id) {
+        if (a.currentPlayerId) {
+          try {
+            const pr = await publicApi.get(`/players/public/${a.currentPlayerId}`);
+            setCurrent(pr.data || null);
+          } catch {
+            setCurrent(null);
+          }
+        } else setCurrent(null);
         await loadSold(a.id);
         await loadBids(a.id);
       }
@@ -76,11 +72,23 @@ export default function LiveViewer() {
 
   useEffect(() => {
     if (!auction?.id) return;
-    if (joinedIdRef.current === auction.id) return;
-    joinedIdRef.current = auction.id;
-    const socket = io(getSocketUrl(), { transports: ['websocket', 'polling'], reconnection: true });
+    if (socketRef.current) {
+      try { socketRef.current.disconnect(); } catch {}
+      socketRef.current = null;
+    }
+    const socket = io(getSocketUrl(), {
+      transports: ['websocket', 'polling'],
+      reconnection: true,
+      reconnectionAttempts: 40,
+      reconnectionDelay: 400,
+      reconnectionDelayMax: 4000,
+      timeout: 10000
+    });
     socketRef.current = socket;
-    socket.emit('join-auction', auction.id);
+    joinedIdRef.current = auction.id;
+    const join = () => socket.emit('join-auction', auction.id);
+    join();
+    socket.on('connect', join);
 
     socket.on('player-selected', (data: any) => {
       if (data.auction) setAuction(data.auction);
@@ -143,6 +151,34 @@ export default function LiveViewer() {
     };
   }, [auction?.id]);
 
+  // Fallback poll so Live never goes fully stale if socket drops
+  useEffect(() => {
+    if (!auction?.id) return;
+    const id = window.setInterval(async () => {
+      try {
+        const aRes = await publicApi.get('/auctions/public/active');
+        const a = aRes.data;
+        if (a?.id) {
+          setAuction((prev: any) => {
+            if (!prev) return a;
+            if (prev.currentPlayerId !== a.currentPlayerId || prev.currentBid !== a.currentBid || prev.status !== a.status) {
+              return a;
+            }
+            return prev;
+          });
+          if (a.currentPlayerId) {
+            publicApi.get(`/players/public/${a.currentPlayerId}`).then(pr => {
+              if (pr.data) setCurrent(pr.data);
+            }).catch(() => {});
+          } else {
+            setCurrent(null);
+          }
+        }
+      } catch { /* ignore */ }
+    }, 4000);
+    return () => clearInterval(id);
+  }, [auction?.id]);
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--bg)' }}>
@@ -151,147 +187,103 @@ export default function LiveViewer() {
     );
   }
 
+  if (!auction) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center gap-4 p-6" style={{ background: 'var(--bg)' }}>
+        <p style={{ color: 'var(--text-2)' }}>No live auction right now.</p>
+        <Link to="/" className="as-btn-primary">Home</Link>
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen pb-10" style={{ background: 'var(--bg)', color: 'var(--text-primary)' }}>
-      <header className="glass-nav sticky top-0 z-40">
-        <div className="max-w-lg mx-auto px-4 py-3 flex items-center justify-between">
+    <div className="min-h-screen" style={{ background: 'var(--bg)', color: 'var(--text)' }}>
+      <div className="max-w-3xl mx-auto p-4 space-y-4">
+        <div className="flex items-center justify-between gap-2">
           <div>
-            <div className="text-[15px] font-semibold">{auction?.name || 'Live Auction'}</div>
-            <div className="text-xs text-[var(--text-secondary)] capitalize">{auction?.status || 'idle'} · Public View</div>
+            <div className="text-[12px] uppercase tracking-wide" style={{ color: 'var(--text-2)' }}>{auction.status}</div>
+            <h1 className="text-[22px] font-semibold">{auction.name || 'Live Auction'}</h1>
           </div>
-          <div className="flex items-center gap-3">
-            <Link to="/results" className="text-[13px]" style={{ color: 'var(--accent)' }}>Results</Link>
-            <Link to="/results" className="text-[13px] text-[var(--text-secondary)]">Squads & results</Link>
-            <ThemeToggle />
-          </div>
+          <ThemeToggle />
         </div>
-      </header>
 
-      <main className="max-w-lg mx-auto p-4 space-y-4">
-        {current && (
-          <div className={`glass rounded-[22px] p-6 text-center relative overflow-hidden ${
-            lastSale?.status === 'Sold' ? 'as-anim-sold' :
-            lastSale?.status === 'Unsold' ? 'as-anim-unsold' :
-            lastSale?.status === 'Recalled' ? 'as-anim-recall' : ''
-          }`}>
-            {current.photoUrl ? (
-              <img
-                src={current.photoUrl}
-                alt=""
-                className="w-44 h-44 sm:w-56 sm:h-56 md:w-64 md:h-64 rounded-3xl object-cover mx-auto mb-4 shadow-xl"
-              />
-            ) : (
-              <div className="w-44 h-44 sm:w-56 sm:h-56 md:w-64 md:h-64 rounded-3xl mx-auto mb-4 flex items-center justify-center text-6xl bg-black/5 dark:bg-white/10">
-                🏏
-              </div>
-            )}
-            <div className="text-xs uppercase tracking-wide text-[var(--text-secondary)]">
-              {lastSale ? lastSale.status : 'Now auctioning'}
-            </div>
-            <h2 className="text-3xl sm:text-4xl font-semibold mt-1">{current.name}</h2>
-            <p className="text-[var(--text-secondary)] mt-1">
-              {current.role || 'Player'}{current.city ? ` · ${current.city}` : ''}
-            </p>
-
-            {lastSale ? (
-              <div className="mt-6 inline-block glass-strong rounded-2xl px-6 py-3">
-                <div className={`text-2xl sm:text-3xl font-bold tracking-wide ${
-                  lastSale.status === 'Sold' ? 'text-emerald-400' :
-                  lastSale.status === 'Unsold' ? 'text-amber-400' : 'text-sky-400'
-                }`}>
-                  {lastSale.status === 'Sold' ? 'SOLD' : lastSale.status === 'Unsold' ? 'UNSOLD' : lastSale.status.toUpperCase()}
-                </div>
-                {lastSale.status === 'Sold' && (
-                  <>
-                    <div className="text-xl font-semibold tabular-nums mt-1" style={{ color: 'var(--accent)' }}>
-                      ₹{Number(lastSale.price).toLocaleString()}
-                    </div>
-                    <div className="text-sm text-[var(--text-secondary)] mt-1">→ {lastSale.teamName}</div>
-                  </>
-                )}
-              </div>
-            ) : (
-              <div className="mt-6 inline-block glass-strong rounded-2xl px-6 py-3">
-                <div className="text-xs text-[var(--text-secondary)] uppercase">Current bid</div>
-                <div className="text-3xl sm:text-4xl font-semibold text-amber-600 dark:text-amber-400 tabular-nums">
-                  ₹{Number(lastBid?.amount ?? auction?.currentBid ?? current?.basePrice ?? 0).toLocaleString()}
-                </div>
-                <div className="text-sm text-[var(--text-secondary)] mt-1">
-                  Leading:{' '}
-                  <span className="font-medium text-[var(--text-primary)]">
-                    {lastBid?.teamName || auction?.currentBidderName || '—'}
-                  </span>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {!current && auction && (
-          <div className="glass rounded-[22px] p-8 text-center text-[var(--text-secondary)]">
-            Waiting for next player…
-          </div>
-        )}
-
-        <div className="glass rounded-[22px] overflow-hidden">
-          <button
-            type="button"
-            onClick={() => setShowBidHistory(v => !v)}
-            className="w-full flex items-center justify-between px-5 py-3.5 text-left"
-          >
-            <span className="font-semibold text-[var(--text-primary)]">
-              Bid history{' '}
-              {bidHistory.length > 0 && (
-                <span className="text-[var(--text-secondary)] font-normal">({bidHistory.length})</span>
-              )}
-            </span>
-            <span className="text-[var(--text-secondary)] text-sm">{showBidHistory ? '▾ Hide' : '▸ Show'}</span>
-          </button>
-          {showBidHistory && (
-            <div className="px-5 pb-4 border-t border-black/5 dark:border-white/10">
-              {bidHistory.length === 0 ? (
-                <div className="py-4 text-sm text-[var(--text-secondary)] text-center">No bids yet</div>
+        <div className="glass p-5 min-h-[220px]">
+          {current ? (
+            <div className="flex gap-4 items-start">
+              {current.photoUrl ? (
+                <img src={current.photoUrl} alt="" className="w-24 h-24 rounded-2xl object-cover" />
               ) : (
-                <ul className="space-y-1.5 max-h-64 overflow-y-auto pt-3">
-                  {bidHistory.map((b, i) => (
-                    <li
-                      key={b.id || i}
-                      className="flex items-center justify-between gap-3 rounded-xl px-3 py-2 bg-black/5 dark:bg-white/5 text-[13px]"
-                    >
-                      <span className="truncate text-[var(--text-secondary)]">{b.teamName || 'Team'}</span>
-                      <span className="font-semibold tabular-nums text-[var(--text-primary)]">
-                        ₹{Number(b.amount || 0).toLocaleString()}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
+                <div className="w-24 h-24 rounded-2xl flex items-center justify-center text-3xl" style={{ background: 'var(--fill)' }}>🏏</div>
               )}
+              <div className="min-w-0 flex-1">
+                <div className="text-[13px]" style={{ color: 'var(--text-2)' }}>Now auctioning</div>
+                <h2 className="text-[26px] font-semibold leading-tight">{current.name}</h2>
+                <div className="text-[13px] mt-1" style={{ color: 'var(--text-2)' }}>{current.role}{current.city ? ` · ${current.city}` : ''}</div>
+                <div className="mt-4">
+                  <div className="text-[12px]" style={{ color: 'var(--text-2)' }}>Current bid</div>
+                  <div className="text-[30px] font-semibold tabular-nums" style={{ color: 'var(--accent)' }}>
+                    ₹{Number(auction.currentBid || lastBid?.amount || 0).toLocaleString()}
+                  </div>
+                  {lastBid?.teamName && (
+                    <div className="text-[13px] mt-1" style={{ color: 'var(--text-2)' }}>by {lastBid.teamName}</div>
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="py-10 text-center text-[14px]" style={{ color: 'var(--text-2)' }}>
+              Waiting for next player…
+            </div>
+          )}
+
+          {lastSale && (
+            <div className={`mt-4 p-3 rounded-xl text-[14px] ${lastSale.status === 'Sold' ? 'as-anim-sold' : 'as-anim-unsold'}`} style={{ background: 'var(--fill)' }}>
+              <strong>{lastSale.status}</strong> — {lastSale.playerName}
+              {lastSale.status === 'Sold' ? ` → ${lastSale.teamName} for ₹${Number(lastSale.price).toLocaleString()}` : ''}
             </div>
           )}
         </div>
 
-        {soldList.length > 0 && (
-          <div className="glass rounded-[22px] p-5">
-            <h3 className="font-semibold mb-4 text-[var(--text-primary)]">Sold ({soldList.length})</h3>
-            <ul className="space-y-2 max-h-80 overflow-y-auto">
-              {soldList.map(s => (
-                <li key={s.id} className="flex items-center gap-3 text-[13px]">
-                  {s.player?.photoUrl ? (
-                    <img src={s.player.photoUrl} alt="" className="w-8 h-8 rounded-full object-cover shrink-0" />
-                  ) : (
-                    <div className="w-8 h-8 rounded-full bg-black/10 dark:bg-white/10 flex items-center justify-center shrink-0 text-xs">🏏</div>
-                  )}
-                  <div className="min-w-0 flex-1">
-                    <div className="font-medium truncate">{s.player?.name || 'Player'}</div>
-                    <div className="text-[var(--text-secondary)] truncate">{s.team?.name || '—'}</div>
-                  </div>
-                  <div className="font-semibold tabular-nums shrink-0">₹{Number(s.soldPrice || 0).toLocaleString()}</div>
-                </li>
-              ))}
-            </ul>
+        <div className="flex gap-2">
+          <button type="button" className={showBidHistory ? 'as-btn-primary text-sm' : 'as-btn-ghost text-sm'} onClick={() => setShowBidHistory(v => !v)}>
+            Bids ({bidHistory.length})
+          </button>
+          <span className="text-[13px] self-center" style={{ color: 'var(--text-2)' }}>Sold {soldList.length}</span>
+        </div>
+
+        {showBidHistory && (
+          <div className="glass overflow-hidden max-h-64 overflow-y-auto">
+            {bidHistory.length === 0 ? (
+              <div className="p-4 text-[13px]" style={{ color: 'var(--text-2)' }}>No bids yet</div>
+            ) : bidHistory.map(b => (
+              <div key={b.id} className="flex justify-between px-4 py-2 border-b" style={{ borderColor: 'var(--separator)' }}>
+                <span>{b.teamName || b.teamId}</span>
+                <span className="font-semibold tabular-nums">₹{Number(b.amount).toLocaleString()}</span>
+              </div>
+            ))}
           </div>
         )}
-      </main>
+
+        <div className="glass overflow-hidden">
+          <div className="px-4 py-2 text-[13px] font-medium" style={{ color: 'var(--text-2)' }}>Sold players</div>
+          {soldList.length === 0 ? (
+            <div className="p-4 text-[13px]" style={{ color: 'var(--text-2)' }}>None yet</div>
+          ) : (
+            <table>
+              <thead><tr><th>Player</th><th>Team</th><th>Price</th></tr></thead>
+              <tbody>
+                {soldList.map(s => (
+                  <tr key={s.id}>
+                    <td className="font-medium">{s.player?.name || '—'}</td>
+                    <td>{s.team?.name || '—'}</td>
+                    <td className="tabular-nums">₹{Number(s.soldPrice || 0).toLocaleString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
