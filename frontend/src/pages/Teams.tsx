@@ -12,6 +12,13 @@ interface Team {
   logoUrl?: string;
 }
 
+function cacheBust(url?: string | null) {
+  if (!url) return '';
+  if (url.startsWith('data:')) return url;
+  const sep = url.includes('?') ? '&' : '?';
+  return `${url}${sep}v=${Date.now()}`;
+}
+
 export default function Teams() {
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin' || user?.role === 'developer';
@@ -70,22 +77,34 @@ export default function Teams() {
     e.preventDefault();
     try {
       const maxPlayers = form.maxPlayers !== '' ? Number(form.maxPlayers) : null;
+      const logoPayload = form.logoUrl ? form.logoUrl.split('?')[0] : undefined;
       if (editing) {
         await api.put(`/teams/${editing.id}`, {
           name: form.name, purse: Number(form.purse),
           remainingPurse: form.remainingPurse !== '' ? Number(form.remainingPurse) : undefined,
-          maxPlayers, logoUrl: form.logoUrl || undefined
+          maxPlayers, logoUrl: logoPayload
         });
       } else {
         await api.post('/teams', {
           name: form.name, purse: Number(form.purse), maxPlayers,
-          logoUrl: form.logoUrl || undefined,
+          logoUrl: logoPayload,
           managerName: form.managerName || undefined,
           managerEmail: form.managerEmail || undefined,
           managerPassword: form.managerPassword || undefined
         });
       }
       setShowModal(false);
+      if (editing) {
+        const logo = form.logoUrl ? cacheBust(form.logoUrl.split('?')[0]) : form.logoUrl;
+        setTeams(prev => prev.map(tm => tm.id === editing.id ? {
+          ...tm,
+          name: form.name,
+          purse: Number(form.purse) || tm.purse,
+          remainingPurse: form.remainingPurse !== '' ? Number(form.remainingPurse) : tm.remainingPurse,
+          maxPlayers: form.maxPlayers !== '' ? Number(form.maxPlayers) : tm.maxPlayers,
+          logoUrl: logo || tm.logoUrl
+        } : tm));
+      }
       loadTeams(true);
     } catch (err: any) {
       alert(err.response?.data?.error || 'Save failed');
@@ -112,7 +131,7 @@ export default function Teams() {
         await api.post('/teams/bulk-delete', { ids: selected });
       } catch {
         for (const id of selected) {
-          try { await api.delete(`/teams/${id}`); } catch { /* skip locked */ }
+          try { await api.delete(`/teams/${id}`); } catch { /* skip */ }
         }
       }
       setSelected([]);
@@ -205,11 +224,19 @@ export default function Teams() {
         canvas.toBlob(b => (b ? resolve(b) : reject(new Error('crop failed'))), 'image/jpeg', 0.9)
       );
       const fd = new FormData();
-      // Backend expects field name "file" (multer.single('file'))
       fd.append('file', blob, 'logo.jpg');
       const res = await api.post('/upload/image', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
-      const url = res.data?.url || res.data?.path || '';
+      const raw = res.data?.url || res.data?.path || '';
+      const url = cacheBust(raw);
       setForm(f => ({ ...f, logoUrl: url }));
+      if (editing?.id && raw) {
+        try {
+          await api.put(`/teams/${editing.id}`, { logoUrl: raw });
+          setTeams(prev => prev.map(tm => tm.id === editing.id ? { ...tm, logoUrl: url } : tm));
+        } catch (e) {
+          console.warn('logo save', e);
+        }
+      }
       setCropSrc(null);
     } catch (err: any) {
       alert(err.response?.data?.error || 'Logo upload failed');
@@ -335,22 +362,14 @@ export default function Teams() {
               <input type="number" placeholder="Max players (optional)" value={form.maxPlayers} onChange={e => setForm({ ...form, maxPlayers: e.target.value })} className="as-input" />
               <div className="space-y-2">
                 <label className="text-[12px]" style={{ color: 'var(--text-2)' }}>Logo URL or upload</label>
-                <input
-                  type="url"
-                  placeholder="https://… logo image URL"
-                  value={form.logoUrl}
-                  onChange={e => setForm({ ...form, logoUrl: e.target.value })}
-                  className="as-input"
-                />
+                <input type="url" placeholder="https://… logo image URL" value={form.logoUrl} onChange={e => setForm({ ...form, logoUrl: e.target.value })} className="as-input" />
                 <div className="flex items-center gap-2">
                   {form.logoUrl ? (
                     <img src={form.logoUrl} alt="" className="w-10 h-10 rounded-lg object-cover" onError={e => { (e.target as HTMLImageElement).style.opacity = '0.3'; }} />
                   ) : (
                     <span className="w-10 h-10 rounded-lg flex items-center justify-center text-[11px]" style={{ background: 'var(--fill)' }}>Logo</span>
                   )}
-                  <button type="button" className="as-btn-ghost text-sm" onClick={() => logoFileRef.current?.click()}>
-                    Upload from device
-                  </button>
+                  <button type="button" className="as-btn-ghost text-sm" onClick={() => logoFileRef.current?.click()}>Upload from device</button>
                   <input ref={logoFileRef} type="file" accept="image/*" onChange={handleLogoFile} className="hidden" />
                 </div>
               </div>
