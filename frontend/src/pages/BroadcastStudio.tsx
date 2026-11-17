@@ -268,6 +268,71 @@ export default function BroadcastStudio() {
           )}
         </div>
       </div>
+
+      <div className="glass p-4 mt-4">
+        <div className="font-semibold mb-2">Scoreboard layout preview</div>
+        <p className="text-[12px] mb-3" style={{ color: 'var(--text-2)' }}>
+          Approximate ICC-style overlay. Top/bottom bars, side rails and corner use your sponsor placements. Colours and logo update live as you edit (save to push to /scoreboard).
+        </p>
+        <div
+          className="relative rounded-2xl overflow-hidden border border-white/10"
+          style={{
+            background: `linear-gradient(160deg, ${brand.secondaryColor || '#1c1c1e'}, #0a0a0c 60%)`,
+            minHeight: 280
+          }}
+        >
+          <div className="flex items-center justify-center gap-4 px-4 py-2 border-b border-white/10" style={{ background: 'rgba(0,0,0,0.35)' }}>
+            {(brand.sponsorPlacements || []).filter((p: any) => (p.position || '') === 'top').map((p: any, i: number) => (
+              <img key={i} src={p.url} alt="" className="h-7 object-contain opacity-90" />
+            ))}
+            {!(brand.sponsorPlacements || []).some((p: any) => p.position === 'top') && (
+              <span className="text-[11px] text-white/30">Top bar sponsors</span>
+            )}
+          </div>
+          <div className="flex" style={{ minHeight: 200 }}>
+            <div className="w-14 flex flex-col items-center justify-center gap-2 py-3 border-r border-white/10" style={{ background: 'rgba(0,0,0,0.25)' }}>
+              {(brand.sponsorPlacements || []).filter((p: any) => p.position === 'left').map((p: any, i: number) => (
+                <img key={i} src={p.url} alt="" className="w-10 h-10 object-contain" />
+              ))}
+              {!(brand.sponsorPlacements || []).some((p: any) => p.position === 'left') && (
+                <span className="text-[10px] text-white/25" style={{ writingMode: 'vertical-rl' }}>Left</span>
+              )}
+            </div>
+            <div className="flex-1 flex flex-col items-center justify-center px-4 py-6 relative">
+              {brand.logoUrl ? <img src={brand.logoUrl} alt="" className="h-10 object-contain mb-3 opacity-90" /> : null}
+              <div className="text-[11px] uppercase tracking-widest" style={{ color: brand.primaryColor || '#0a84ff' }}>
+                {brand.lowerThirdTitle || 'League name'}
+              </div>
+              <div className="text-3xl font-black tabular-nums text-white mt-1">142/3</div>
+              <div className="text-sm text-white/50 tabular-nums">15.2 ov · CRR 9.32</div>
+              <div className="text-[12px] mt-2" style={{ color: brand.accentColor || '#30d158' }}>
+                {brand.lowerThirdSubtitle || 'Live'}
+              </div>
+              <div className="absolute bottom-3 right-3 flex gap-1">
+                {(brand.sponsorPlacements || []).filter((p: any) => p.position === 'corner').map((p: any, i: number) => (
+                  <img key={i} src={p.url} alt="" className="h-8 w-8 object-contain rounded bg-black/40" />
+                ))}
+              </div>
+            </div>
+            <div className="w-14 flex flex-col items-center justify-center gap-2 py-3 border-l border-white/10" style={{ background: 'rgba(0,0,0,0.25)' }}>
+              {(brand.sponsorPlacements || []).filter((p: any) => p.position === 'right').map((p: any, i: number) => (
+                <img key={i} src={p.url} alt="" className="w-10 h-10 object-contain" />
+              ))}
+              {!(brand.sponsorPlacements || []).some((p: any) => p.position === 'right') && (
+                <span className="text-[10px] text-white/25" style={{ writingMode: 'vertical-rl' }}>Right</span>
+              )}
+            </div>
+          </div>
+          <div className="flex items-center justify-center gap-4 px-4 py-2 border-t border-white/10" style={{ background: 'rgba(0,0,0,0.35)' }}>
+            {(brand.sponsorPlacements || []).filter((p: any) => (p.position || 'bottom') === 'bottom').map((p: any, i: number) => (
+              <img key={i} src={p.url} alt="" className="h-7 object-contain opacity-90" />
+            ))}
+            {!(brand.sponsorPlacements || []).some((p: any) => (p.position || 'bottom') === 'bottom') && (
+              <span className="text-[11px] text-white/30">Bottom bar sponsors</span>
+            )}
+          </div>
+        </div>
+      </div>
     </AppShell>
   );
 }
