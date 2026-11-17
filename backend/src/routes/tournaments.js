@@ -3,7 +3,7 @@ const { v4: uuidv4 } = require('uuid');
 const {
   getTournaments, addTournament, updateTournament,
   getFixtures, addFixture, updateFixture, deleteFixture,
-  getVenues, addVenue,
+  getVenues, addVenue, updateVenue, deleteVenue,
   getTeams, getMatches, getOrganizations, getOrgBySlug
 } = require('../data/store');
 const { authMiddleware, requireRole } = require('../middleware/auth');
@@ -25,54 +25,49 @@ function parseResult(m) {
   const aBalls = Number(a.balls) || 0;
   const bBalls = Number(b.balls) || 0;
   if (aRuns === bRuns) return { played: true, isTie: true, aRuns, bRuns, aBalls, bBalls };
-  if (bRuns > aRuns) {
-    return { played: true, winnerName: m.teamBName, loserName: m.teamAName, aRuns, bRuns, aBalls, bBalls };
-  }
-  return { played: true, winnerName: m.teamAName, loserName: m.teamBName, aRuns, bRuns, aBalls, bBalls };
+  const aWon = aRuns > bRuns;
+  return { played: true, aWon, bWon: !aWon, aRuns, bRuns, aBalls, bBalls };
 }
 
-function computeTable(matches, teams) {
+function computeTable(orgId) {
+  const matches = getMatches(orgId).filter(m => m.status === 'completed' || m.status === 'abandoned' || m.status === 'no_result');
+  const teams = getTeams(orgId);
   const map = {};
   teams.forEach(t => {
-    map[t.name] = {
-      teamId: t.id, teamName: t.name, logoUrl: t.logoUrl || null,
-      played: 0, won: 0, lost: 0, tied: 0, nr: 0, points: 0,
-      runsFor: 0, ballsFor: 0, runsAgainst: 0, ballsAgainst: 0, nrr: 0
-    };
+    map[t.name] = { teamName: t.name, played: 0, won: 0, lost: 0, points: 0, runsFor: 0, ballsFor: 0, runsAgainst: 0, ballsAgainst: 0, nrr: 0 };
   });
-  matches.filter(m => m.status === 'completed' || m.status === 'abandoned' || m.status === 'no_result').forEach(m => {
-    const r = parseResult(m);
-    if (!r.played) return;
-    const ensure = (name) => {
-      if (!map[name]) {
-        map[name] = {
-          teamId: null, teamName: name, logoUrl: null,
-          played: 0, won: 0, lost: 0, tied: 0, nr: 0, points: 0,
-          runsFor: 0, ballsFor: 0, runsAgainst: 0, ballsAgainst: 0, nrr: 0
-        };
-      }
-      return map[name];
-    };
-    const A = ensure(m.teamAName);
-    const B = ensure(m.teamBName);
-    A.played += 1; B.played += 1;
-    if (r.isNR) { A.nr += 1; B.nr += 1; A.points += 1; B.points += 1; return; }
-    A.runsFor += r.aRuns; A.ballsFor += Math.max(1, r.aBalls);
-    A.runsAgainst += r.bRuns; A.ballsAgainst += Math.max(1, r.bBalls);
-    B.runsFor += r.bRuns; B.ballsFor += Math.max(1, r.bBalls);
-    B.runsAgainst += r.aRuns; B.ballsAgainst += Math.max(1, r.aBalls);
-    if (r.isTie) { A.tied += 1; B.tied += 1; A.points += 1; B.points += 1; }
-    else if (r.winnerName === m.teamAName) { A.won += 1; B.lost += 1; A.points += 2; }
-    else { B.won += 1; A.lost += 1; B.points += 2; }
+  matches.forEach(m => {
+    const pr = parseResult(m);
+    if (!pr.played) return;
+    const aName = m.teamAName;
+    const bName = m.teamBName;
+    if (!map[aName]) map[aName] = { teamName: aName, played: 0, won: 0, lost: 0, points: 0, runsFor: 0, ballsFor: 0, runsAgainst: 0, ballsAgainst: 0, nrr: 0 };
+    if (!map[bName]) map[bName] = { teamName: bName, played: 0, won: 0, lost: 0, points: 0, runsFor: 0, ballsFor: 0, runsAgainst: 0, ballsAgainst: 0, nrr: 0 };
+    map[aName].played++;
+    map[bName].played++;
+    if (pr.isNR || pr.isTie) {
+      map[aName].points += 1;
+      map[bName].points += 1;
+    } else if (pr.aWon) {
+      map[aName].won++; map[bName].lost++; map[aName].points += 2;
+    } else {
+      map[bName].won++; map[aName].lost++; map[bName].points += 2;
+    }
+    if (pr.aRuns != null) {
+      map[aName].runsFor += pr.aRuns; map[aName].ballsFor += pr.aBalls || 1;
+      map[aName].runsAgainst += pr.bRuns; map[aName].ballsAgainst += pr.bBalls || 1;
+      map[bName].runsFor += pr.bRuns; map[bName].ballsFor += pr.bBalls || 1;
+      map[bName].runsAgainst += pr.aRuns; map[bName].ballsAgainst += pr.aBalls || 1;
+    }
   });
-  const table = Object.values(map).map(row => {
-    const rrFor = row.ballsFor > 0 ? (row.runsFor / row.ballsFor) * 6 : 0;
-    const rrAg = row.ballsAgainst > 0 ? (row.runsAgainst / row.ballsAgainst) * 6 : 0;
-    row.nrr = Math.round((rrFor - rrAg) * 1000) / 1000;
-    return row;
-  });
-  table.sort((a, b) => b.points - a.points || b.nrr - a.nrr || a.teamName.localeCompare(b.teamName));
-  return table.map((r, i) => ({ ...r, rank: i + 1 }));
+  const table = Object.values(map).map(r => {
+    const rf = r.ballsFor > 0 ? (r.runsFor / r.ballsFor) * 6 : 0;
+    const ra = r.ballsAgainst > 0 ? (r.runsAgainst / r.ballsAgainst) * 6 : 0;
+    r.nrr = Math.round((rf - ra) * 1000) / 1000;
+    return r;
+  }).sort((a, b) => b.points - a.points || b.nrr - a.nrr);
+  table.forEach((r, i) => { r.rank = i + 1; });
+  return table;
 }
 
 router.get('/', authMiddleware, tenantMiddleware, (req, res) => {
@@ -80,25 +75,19 @@ router.get('/', authMiddleware, tenantMiddleware, (req, res) => {
 });
 
 router.post('/', authMiddleware, requireRole('admin', 'developer'), tenantMiddleware, (req, res) => {
-  const { name, season, startDate, endDate, format } = req.body;
+  const { name, season } = req.body;
   if (!name) return res.status(400).json({ error: 'name required' });
-  const t = addTournament({
-    id: uuidv4(), orgId: req.orgId, name: String(name).trim(),
-    season: season || new Date().getFullYear().toString(),
-    startDate: startDate || null, endDate: endDate || null,
-    format: format || 'T20', status: 'active', createdAt: new Date().toISOString()
-  });
+  const t = addTournament({ id: uuidv4(), name, season: season || '', orgId: req.orgId, createdAt: new Date().toISOString() });
   res.status(201).json(t);
 });
 
 router.put('/:id', authMiddleware, requireRole('admin', 'developer'), tenantMiddleware, (req, res) => {
-  const existing = getTournaments(req.orgId).find(x => x.id === req.params.id);
-  if (!existing) return res.status(404).json({ error: 'Not found' });
   const updates = {};
-  ['name', 'season', 'startDate', 'endDate', 'format', 'status'].forEach(k => {
-    if (req.body[k] !== undefined) updates[k] = req.body[k];
-  });
-  res.json(updateTournament(req.params.id, updates));
+  if (req.body.name != null) updates.name = String(req.body.name);
+  if (req.body.season != null) updates.season = String(req.body.season);
+  const updated = updateTournament(req.params.id, updates);
+  if (!updated) return res.status(404).json({ error: 'Not found' });
+  res.json(updated);
 });
 
 router.get('/venues/list', authMiddleware, tenantMiddleware, (req, res) => {
@@ -109,113 +98,114 @@ router.post('/venues', authMiddleware, requireRole('admin', 'developer'), tenant
   const { name, city, capacity } = req.body;
   if (!name) return res.status(400).json({ error: 'name required' });
   const v = addVenue({
-    id: uuidv4(), orgId: req.orgId, name: String(name).trim(),
-    city: city || '', capacity: capacity ? Number(capacity) : null,
-    createdAt: new Date().toISOString()
+    id: uuidv4(), name: String(name).trim(), city: city ? String(city).trim() : '',
+    capacity: capacity != null && capacity !== '' ? Number(capacity) : null,
+    orgId: req.orgId, createdAt: new Date().toISOString()
   });
   res.status(201).json(v);
 });
 
+router.put('/venues/:id', authMiddleware, requireRole('admin', 'developer'), tenantMiddleware, (req, res) => {
+  const { name, city, capacity } = req.body;
+  const updates = {};
+  if (name != null) updates.name = String(name).trim();
+  if (city !== undefined) updates.city = city ? String(city).trim() : '';
+  if (capacity !== undefined) updates.capacity = capacity === '' || capacity == null ? null : Number(capacity);
+  const updated = updateVenue(req.params.id, updates);
+  if (!updated) return res.status(404).json({ error: 'Venue not found' });
+  res.json(updated);
+});
+
+router.delete('/venues/:id', authMiddleware, requireRole('admin', 'developer'), tenantMiddleware, (req, res) => {
+  const ok = deleteVenue(req.params.id);
+  if (!ok) return res.status(404).json({ error: 'Venue not found' });
+  res.json({ message: 'Venue deleted' });
+});
+
 router.get('/fixtures/list', authMiddleware, tenantMiddleware, (req, res) => {
   const fixtures = getFixtures(req.orgId);
-  const venues = getVenues(req.orgId);
   const teams = getTeams(req.orgId);
-  const vMap = Object.fromEntries(venues.map(v => [v.id, v]));
+  const venues = getVenues(req.orgId);
   const tMap = Object.fromEntries(teams.map(t => [t.id, t]));
+  const vMap = Object.fromEntries(venues.map(v => [v.id, v]));
   res.json(fixtures.map(f => ({
     ...f,
-    venue: f.venueId ? vMap[f.venueId] : null,
     teamA: f.teamAId ? tMap[f.teamAId] : null,
-    teamB: f.teamBId ? tMap[f.teamBId] : null
-  })).sort((a, b) => new Date(a.scheduledAt || 0) - new Date(b.scheduledAt || 0)));
+    teamB: f.teamBId ? tMap[f.teamBId] : null,
+    venue: f.venueId ? vMap[f.venueId] : null
+  })));
 });
 
 router.post('/fixtures', authMiddleware, requireRole('admin', 'developer'), tenantMiddleware, (req, res) => {
   const { tournamentId, teamAId, teamBId, venueId, scheduledAt, label } = req.body;
-  if (!teamAId || !teamBId) return res.status(400).json({ error: 'teamAId and teamBId required' });
   const f = addFixture({
-    id: uuidv4(), orgId: req.orgId, tournamentId: tournamentId || null,
+    id: uuidv4(), tournamentId: tournamentId || null,
     teamAId, teamBId, venueId: venueId || null, scheduledAt: scheduledAt || null,
-    label: label || null, status: 'scheduled', matchId: null, createdAt: new Date().toISOString()
+    label: label || '', status: 'scheduled', orgId: req.orgId, createdAt: new Date().toISOString()
   });
   res.status(201).json(f);
 });
 
 router.put('/fixtures/:id', authMiddleware, requireRole('admin', 'developer'), tenantMiddleware, (req, res) => {
-  const existing = getFixtures(req.orgId).find(x => x.id === req.params.id);
-  if (!existing) return res.status(404).json({ error: 'Not found' });
   const updates = {};
   ['tournamentId', 'teamAId', 'teamBId', 'venueId', 'scheduledAt', 'label', 'status', 'matchId'].forEach(k => {
     if (req.body[k] !== undefined) updates[k] = req.body[k];
   });
-  res.json(updateFixture(req.params.id, updates));
+  const updated = updateFixture(req.params.id, updates);
+  if (!updated) return res.status(404).json({ error: 'Not found' });
+  res.json(updated);
 });
 
 router.delete('/fixtures/:id', authMiddleware, requireRole('admin', 'developer'), tenantMiddleware, (req, res) => {
-  if (!deleteFixture(req.params.id)) return res.status(404).json({ error: 'Not found' });
-  res.json({ ok: true });
+  const ok = deleteFixture(req.params.id);
+  if (!ok) return res.status(404).json({ error: 'Not found' });
+  res.json({ message: 'Deleted' });
 });
 
 router.get('/standings', authMiddleware, tenantMiddleware, (req, res) => {
-  res.json({ table: computeTable(getMatches(req.orgId), getTeams(req.orgId)) });
+  res.json({ table: computeTable(req.orgId) });
 });
 
 router.get('/public', (req, res) => {
-  const org = getOrganizations()[0];
-  if (!org) return res.json({ org: null, table: [], fixtures: [] });
-  const orgId = org.id;
-  const tournaments = getTournaments(orgId);
-  const active = tournaments.find(t => t.status === 'active') || tournaments[0] || null;
-  const teams = getTeams(orgId);
+  const orgs = getOrganizations();
+  const org = orgs[0];
+  const orgId = org?.id;
   const fixtures = getFixtures(orgId);
+  const teams = getTeams(orgId);
   const venues = getVenues(orgId);
-  const vMap = Object.fromEntries(venues.map(v => [v.id, v]));
   const tMap = Object.fromEntries(teams.map(t => [t.id, t]));
-  const matches = getMatches(orgId);
-  const live = matches.find(m => m.status === 'live' || m.status === 'rain_delay' || m.status === 'super_over');
+  const vMap = Object.fromEntries(venues.map(v => [v.id, v]));
   res.json({
-    org: { id: org.id, name: org.name, slug: org.slug },
-    tournament: active,
-    liveMatch: live ? { id: live.id, name: live.name, teamAName: live.teamAName, teamBName: live.teamBName, status: live.status } : null,
+    tournaments: getTournaments(orgId),
     fixtures: fixtures.map(f => ({
       ...f,
-      venueName: f.venueId ? vMap[f.venueId]?.name : null,
       teamAName: f.teamAId ? tMap[f.teamAId]?.name : null,
-      teamBName: f.teamBId ? tMap[f.teamBId]?.name : null
+      teamBName: f.teamBId ? tMap[f.teamBId]?.name : null,
+      venueName: f.venueId ? vMap[f.venueId]?.name : null
     })),
-    table: computeTable(matches, teams),
-    recent: matches.filter(m => m.status === 'completed').slice(0, 8),
-    teams: teams.map(t => ({ id: t.id, name: t.name, logoUrl: t.logoUrl || null }))
+    table: computeTable(orgId)
   });
 });
 
 router.get('/public/:slug', (req, res) => {
-  const org = getOrgBySlug(req.params.slug) || getOrganizations()[0];
-  if (!org) return res.status(404).json({ error: 'League not found' });
-  req.url = '/public';
+  const org = getOrgBySlug(req.params.slug);
+  if (!org) return res.status(404).json({ error: 'Not found' });
   const orgId = org.id;
-  const tournaments = getTournaments(orgId);
-  const active = tournaments.find(t => t.status === 'active') || tournaments[0] || null;
-  const teams = getTeams(orgId);
   const fixtures = getFixtures(orgId);
+  const teams = getTeams(orgId);
   const venues = getVenues(orgId);
-  const vMap = Object.fromEntries(venues.map(v => [v.id, v]));
   const tMap = Object.fromEntries(teams.map(t => [t.id, t]));
-  const matches = getMatches(orgId);
-  const live = matches.find(m => m.status === 'live' || m.status === 'rain_delay' || m.status === 'super_over');
+  const vMap = Object.fromEntries(venues.map(v => [v.id, v]));
   res.json({
-    org: { id: org.id, name: org.name, slug: org.slug },
-    tournament: active,
-    liveMatch: live ? { id: live.id, name: live.name, teamAName: live.teamAName, teamBName: live.teamBName, status: live.status } : null,
+    org: { name: org.name, slug: org.slug },
+    tournaments: getTournaments(orgId),
     fixtures: fixtures.map(f => ({
       ...f,
-      venueName: f.venueId ? vMap[f.venueId]?.name : null,
       teamAName: f.teamAId ? tMap[f.teamAId]?.name : null,
-      teamBName: f.teamBId ? tMap[f.teamBId]?.name : null
+      teamBName: f.teamBId ? tMap[f.teamBId]?.name : null,
+      venueName: f.venueId ? vMap[f.venueId]?.name : null
     })),
-    table: computeTable(matches, teams),
-    recent: matches.filter(m => m.status === 'completed').slice(0, 8),
-    teams: teams.map(t => ({ id: t.id, name: t.name, logoUrl: t.logoUrl || null }))
+    table: computeTable(orgId)
   });
 });
 
