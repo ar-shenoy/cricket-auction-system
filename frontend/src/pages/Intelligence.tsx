@@ -9,11 +9,17 @@ function inr(n: number) {
 export default function Intelligence() {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    setLoading(true);
+    setError(null);
     api.get('/analytics/intelligence')
       .then(r => setData(r.data))
-      .catch(console.error)
+      .catch((e) => {
+        console.error(e);
+        setError(e.response?.data?.error || e.message || 'Failed to load intelligence');
+      })
       .finally(() => setLoading(false));
   }, []);
 
@@ -33,7 +39,21 @@ export default function Intelligence() {
   return (
     <AppShell title="Intelligence 2.0" subtitle="Market values · role inflation · impact">
       {loading && <div className="glass p-8 text-center" style={{ color: 'var(--text-2)' }}>Crunching market…</div>}
-      {data && (
+      {!loading && error && (
+        <div className="glass p-6 text-center space-y-2">
+          <div className="font-medium" style={{ color: '#ff3b30' }}>Could not load Intel</div>
+          <div className="text-[13px]" style={{ color: 'var(--text-2)' }}>{error}</div>
+        </div>
+      )}
+      {!loading && !error && data && data.market?.soldCount === 0 && (
+        <div className="glass p-8 text-center space-y-2">
+          <div className="font-medium">No sold players yet</div>
+          <div className="text-[13px]" style={{ color: 'var(--text-2)' }}>
+            Run an auction and mark players as sold — Intel will show market averages, role inflation, and overpay/value flags here.
+          </div>
+        </div>
+      )}
+      {data && data.market?.soldCount > 0 && (
         <div className="space-y-4">
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
             {[
@@ -102,7 +122,7 @@ export default function Intelligence() {
                   <span className="tabular-nums">{b.runs} ({b.balls}) SR {b.sr}</span>
                 </div>
               ))}
-              {data.impact.batters.length === 0 && <div className="text-[13px]" style={{ color: 'var(--text-2)' }}>—</div>}
+              {data.impact.batters.length === 0 && <div className="text-[13px]" style={{ color: 'var(--text-2)' }}>— Score matches to see batting impact</div>}
             </div>
             <div className="glass p-4">
               <div className="font-semibold mb-2">Bowl impact</div>
@@ -112,7 +132,7 @@ export default function Intelligence() {
                   <span className="tabular-nums">{b.wickets}/{b.runs}</span>
                 </div>
               ))}
-              {data.impact.bowlers.length === 0 && <div className="text-[13px]" style={{ color: 'var(--text-2)' }}>—</div>}
+              {data.impact.bowlers.length === 0 && <div className="text-[13px]" style={{ color: 'var(--text-2)' }}>— Score matches to see bowling impact</div>}
             </div>
           </div>
         </div>
