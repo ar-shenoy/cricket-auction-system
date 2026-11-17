@@ -1,7 +1,5 @@
 const express = require('express');
-const {
-  getBroadcast, upsertBroadcast, getMatches, getOrganizations, getOrgBySlug
-} = require('../data/store');
+const { getBroadcast, upsertBroadcast, getOrganizations, getOrgBySlug, getMatches } = require('../data/store');
 const { authMiddleware, requireRole } = require('../middleware/auth');
 const { tenantMiddleware } = require('../middleware/tenant');
 
@@ -9,16 +7,16 @@ const router = express.Router();
 
 function defaultBrand(org) {
   return {
-    orgId: org?.id,
+    orgId: org?.id || 'org-default',
     primaryColor: '#0a84ff',
     secondaryColor: '#1c1c1e',
     accentColor: '#30d158',
-    logoUrl: null,
+    logoUrl: '',
     sponsorLogos: [],
+    sponsorPlacements: [],
     showSponsors: true,
-    lowerThirdTitle: org?.name || 'Live',
-    lowerThirdSubtitle: 'AuctionScore',
-    updatedAt: null
+    lowerThirdTitle: org?.name || 'League',
+    lowerThirdSubtitle: 'Live'
   };
 }
 
@@ -31,7 +29,7 @@ router.get('/settings', authMiddleware, tenantMiddleware, (req, res) => {
 router.put('/settings', authMiddleware, requireRole('admin', 'developer'), tenantMiddleware, (req, res) => {
   const allowed = [
     'primaryColor', 'secondaryColor', 'accentColor', 'logoUrl',
-    'sponsorLogos', 'showSponsors', 'lowerThirdTitle', 'lowerThirdSubtitle'
+    'sponsorLogos', 'sponsorPlacements', 'showSponsors', 'lowerThirdTitle', 'lowerThirdSubtitle'
   ];
   const data = {};
   allowed.forEach(k => {
@@ -56,8 +54,10 @@ router.get('/public/lower-thirds', (req, res) => {
       accentColor: brand.accentColor,
       logoUrl: brand.logoUrl,
       sponsorLogos: brand.showSponsors === false ? [] : (brand.sponsorLogos || []),
+      sponsorPlacements: brand.showSponsors === false ? [] : (brand.sponsorPlacements || []),
       title: brand.lowerThirdTitle || org.name,
-      subtitle: brand.lowerThirdSubtitle || 'Live'
+      subtitle: brand.lowerThirdSubtitle || 'Live',
+      showSponsors: brand.showSponsors !== false
     },
     match: live
       ? {
