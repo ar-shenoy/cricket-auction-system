@@ -135,4 +135,134 @@ router.get('/public/pulse', (req, res) => {
   });
 });
 
+router.get('/intelligence', authMiddleware, (req, res) => {
+  try {
+    const teams = getTeams() || [];
+    const players = getPlayers() || [];
+    const sold = getSoldPlayers() || [];
+    const matches = getMatches() || [];
+
+    const prices = sold
+      .map(s => Number(s.soldPrice) || 0)
+      .filter(n => n > 0)
+      .sort((a, b) => a - b);
+
+    const totalSpend = prices.reduce((a, b) => a + b, 0);
+    const soldCount = sold.length;
+    const avgPrice = soldCount ? Math.round(totalSpend / soldCount) : 0;
+    const medianPrice = prices.length
+      ? (prices.length % 2
+          ? prices[(prices.length - 1) / 2]
+          : Math.round((prices[prices.length / 2 - 1] + prices[prices.length / 2]) / 2))
+      : 0;
+
+    const roleBuckets = {};
+    sold.forEach(s => {
+      const pl = players.find(p => p.id === s.playerId);
+      const role = (pl?.role || s.role || 'Unknown').trim() || 'Unknown';
+      if (!roleBuckets[role]) roleBuckets[role] = { role, count: 0, spend: 0 };
+      roleBuckets[role].count += 1;
+      roleBuckets[role].spend += Number(s.soldPrice) || 0;
+    });
+
+    const roleInflationRaw = Object.values(roleBuckets).map(r => ({
+      role: r.role,
+      count: r.count,
+      spend: r.spend,
+      avgPrice: r.count ? Math.round(r.spend / r.count) : 0
+    }));
+    const roleInflation = roleInflationRaw
+      .map(r => ({
+        ...r,
+        vsMarket: avgPrice ? Math.round(((r.avgPrice - avgPrice) / avgPrice) * 100) : 0
+      }))
+      .sort((a, b) => b.avgPrice - a.avgPrice);
+
+    const roleAvgMap = {};
+    roleInflation.forEach(r => { roleAvgMap[r.role] = r.avgPrice; });
+
+    const marketValues = sold
+      .map(s => {
+        const pl = players.find(p => p.id === s.playerId);
+        const tm = teams.find(t => t.id === s.teamId);
+        const role = (pl?.role || s.role || 'Unknown').trim() || 'Unknown';
+        const soldPrice = Number(s.soldPrice) || 0;
+        const roleAvgPrice = roleAvgMap[role] || avgPrice || 0;
+        const premiumPct = roleAvgPrice
+          ? Math.round(((soldPrice - roleAvgPrice) / roleAvgPrice) * 100)
+          : 0;
+        let marketFlag = 'fair';
+        if (premiumPct >= 20) marketFlag = 'overpay';
+        else if (premiumPct <= -15) marketFlag = 'value';
+        return {
+          playerId: s.playerId,
+          playerName: pl?.name || s.playerName || s.playerId,
+          role,
+          teamId: s.teamId,
+          teamName: tm?.name || s.teamName || s.teamId,
+          soldPrice,
+          roleAvgPrice,
+          premiumPct,
+          marketFlag
+        };
+      })
+      .sort((a, b) => b.soldPrice - a.soldPrice);
+
+    const batters = [];
+    const bowlers = [];
+    matches.forEach(m => {
+      const label = m.name || `${m.teamAName} vs ${m.teamBName}`;
+      const cards = [];
+      if (m.innings1?.battingCard) cards.push(...m.innings1.battingCard.map(x => ({ ...x, match: label })));
+      if (m.innings2?.battingCard) cards.push(...m.innings2.battingCard.map(x => ({ ...x, match: label })));
+      if (m.display?.battingCard) cards.push(...m.display.battingCard.map(x => ({ ...x, match: label })));
+      cards.forEach(b => {
+        if (!b?.name) return;
+        batters.push({
+          name: b.name,
+          match: b.match || label,
+          runs: Number(b.runs) || 0,
+          balls: Number(b.balls) || 0,
+          sr: b.balls ? Math.round((Number(b.runs) || 0) / Number(b.balls) * 100) : 0
+        });
+      });
+      const bowlCards = [];
+      if (m.innings1?.bowlingCard) bowlCards.push(...m.innings1.bowlingCard.map(x => ({ ...x, match: label })));
+      if (m.innings2?.bowlingCard) bowlCards.push(...m.innings2.bowlingCard.map(x => ({ ...x, match: label })));
+      if (m.display?.bowlingCard) bowlCards.push(...m.display.bowlingCard.map(x => ({ ...x, match: label })));
+      bowlCards.forEach(b => {
+        if (!b?.name) return;
+        bowlers.push({
+          name: b.name,
+          match: b.match || label,
+          wickets: Number(b.wickets) || 0,
+          runs: Number(b.runs) || 0
+        });
+      });
+    });
+
+    batters.sort((a, b) => b.runs - a.runs);
+    bowlers.sort((a, b) => b.wickets - a.wickets || a.runs - b.runs);
+
+    res.json({
+      generatedAt: new Date().toISOString(),
+      market: {
+        soldCount,
+        avgPrice,
+        medianPrice,
+        totalSpend
+      },
+      roleInflation,
+      marketValues,
+      impact: {
+        batters: batters.slice(0, 12),
+        bowlers: bowlers.slice(0, 12)
+      }
+    });
+  } catch (err) {
+    console.error('intelligence error', err);
+    res.status(500).json({ error: 'Failed to compute intelligence' });
+  }
+});
+
 module.exports = router;
