@@ -2,29 +2,38 @@ const fs = require('fs');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 
-const DATA_PATH = path.join(__dirname, 'db.json');
+const DATA_FILE = path.join(__dirname, 'db.json');
 const DEFAULT_ORG_ID = 'org-default';
 
 let db = {
-  users: [],
+  organizations: [
+    { id: DEFAULT_ORG_ID, name: 'Default League', slug: 'default', plan: 'free', createdAt: new Date().toISOString() }
+  ],
+  users: [
+    { id: 'admin-001', name: 'League Admin', email: 'admin@auction.com', password: 'admin123', role: 'admin', teamId: null, orgId: DEFAULT_ORG_ID },
+    { id: 'dev-001', name: 'Platform Developer', email: 'developer@auction.com', password: 'devxai2026', role: 'developer', teamId: null, orgId: DEFAULT_ORG_ID }
+  ],
   teams: [],
   players: [],
   auctions: [],
   bids: [],
   soldPlayers: [],
   matches: [],
+  payments: [],
   tournaments: [],
   fixtures: [],
   venues: [],
-  broadcast: [],
-  organizations: []
+  broadcast: []
 };
 
 function loadData() {
   try {
-    if (fs.existsSync(DATA_PATH)) {
-      const raw = fs.readFileSync(DATA_PATH, 'utf8');
+    if (fs.existsSync(DATA_FILE)) {
+      const raw = fs.readFileSync(DATA_FILE, 'utf8');
       const data = JSON.parse(raw);
+      if (!Array.isArray(data.organizations) || !data.organizations.length) {
+        data.organizations = [{ id: DEFAULT_ORG_ID, name: 'Default League', slug: 'default', plan: 'free', createdAt: new Date().toISOString() }];
+      }
       if (!Array.isArray(data.users)) data.users = [];
       if (!Array.isArray(data.teams)) data.teams = [];
       if (!Array.isArray(data.players)) data.players = [];
@@ -32,14 +41,13 @@ function loadData() {
       if (!Array.isArray(data.bids)) data.bids = [];
       if (!Array.isArray(data.soldPlayers)) data.soldPlayers = [];
       if (!Array.isArray(data.matches)) data.matches = [];
+      if (!Array.isArray(data.payments)) data.payments = [];
       if (!Array.isArray(data.tournaments)) data.tournaments = [];
       if (!Array.isArray(data.fixtures)) data.fixtures = [];
       if (!Array.isArray(data.venues)) data.venues = [];
       if (!Array.isArray(data.broadcast)) data.broadcast = [];
-      if (!Array.isArray(data.organizations)) data.organizations = [];
-      ['users', 'teams', 'players', 'auctions', 'bids', 'soldPlayers', 'matches', 'tournaments', 'fixtures', 'venues', 'broadcast', 'organizations'].forEach(k => {
-        if (!Array.isArray(data[k])) data[k] = [];
-      });
+      const orgId = data.organizations[0]?.id || DEFAULT_ORG_ID;
+      data.users.forEach(u => { if (!u.orgId) u.orgId = orgId; });
       db = data;
     }
   } catch (e) {
@@ -47,30 +55,70 @@ function loadData() {
   }
 }
 
-function persist() {
+function saveData(data) {
   try {
-    fs.writeFileSync(DATA_PATH, JSON.stringify(db, null, 2));
+    fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
   } catch (e) {
-    console.error('Failed to persist db', e);
+    console.error('Failed to save db', e);
   }
 }
 
+function persist() { saveData(db); }
+
 loadData();
 
-function byOrg(list, orgId) {
-  if (!orgId) return list;
-  return list.filter(x => !x.orgId || x.orgId === orgId || x.orgId === DEFAULT_ORG_ID);
+(function ensureDeveloper() {
+  const exists = db.users.find(u => u.email === 'developer@auction.com');
+  if (!exists) {
+    db.users.push({
+      id: 'dev-001', name: 'Platform Developer', email: 'developer@auction.com',
+      password: 'devxai2026', role: 'developer', teamId: null, orgId: DEFAULT_ORG_ID
+    });
+    persist();
+  } else if (exists.role !== 'developer') {
+    exists.role = 'developer';
+    persist();
+  }
+  const admin = db.users.find(u => u.email === 'admin@auction.com');
+  if (!admin) {
+    db.users.push({
+      id: 'admin-001', name: 'League Admin', email: 'admin@auction.com',
+      password: 'admin123', role: 'admin', teamId: null, orgId: DEFAULT_ORG_ID
+    });
+    persist();
+  }
+  if (!Array.isArray(db.organizations) || !db.organizations.length) {
+    db.organizations = [{ id: DEFAULT_ORG_ID, name: 'Default League', slug: 'default', plan: 'free', createdAt: new Date().toISOString() }];
+    persist();
+  }
+})();
+
+function byOrg(arr, orgId) {
+  if (!orgId) return arr || [];
+  return (arr || []).filter(x => x.orgId === orgId || (!x.orgId && orgId === DEFAULT_ORG_ID));
 }
 
 module.exports = {
+  DEFAULT_ORG_ID,
+  getData: () => db,
+  setData: (newData) => { db = newData; persist(); },
   persist,
-  getUsers: () => db.users,
-  getTeams: (orgId) => (orgId ? byOrg(db.teams, orgId) : db.teams),
-  getPlayers: (orgId) => (orgId ? byOrg(db.players, orgId) : db.players),
-  getAuctions: (orgId) => (orgId ? byOrg(db.auctions, orgId) : db.auctions),
-  getBids: () => db.bids,
-  getSoldPlayers: (orgId) => (orgId ? byOrg(db.soldPlayers, orgId) : db.soldPlayers),
-  getMatches: (orgId) => (orgId ? byOrg(db.matches, orgId) : db.matches),
+  getUsers: (orgId) => (orgId ? byOrg(db.users, orgId) : db.users),
+  getAllUsers: () => db.users,
+  getTeams: (orgId) => byOrg(db.teams, orgId),
+  getPlayers: (orgId) => byOrg(db.players, orgId),
+  getAuctions: (orgId) => byOrg(db.auctions, orgId),
+  getBids: (orgId) => (orgId ? byOrg(db.bids, orgId) : db.bids),
+  getSoldPlayers: (orgId) => byOrg(db.soldPlayers, orgId),
+  getMatches: (orgId) => {
+    if (!Array.isArray(db.matches)) db.matches = [];
+    return orgId ? byOrg(db.matches, orgId) : db.matches;
+  },
+  getOrganizations: () => {
+    if (!Array.isArray(db.organizations)) db.organizations = [];
+    return db.organizations;
+  },
+  getPayments: (orgId) => byOrg(db.payments || [], orgId),
   getTournaments: (orgId) => {
     if (!Array.isArray(db.tournaments)) db.tournaments = [];
     return orgId ? byOrg(db.tournaments, orgId) : db.tournaments;
@@ -87,51 +135,52 @@ module.exports = {
     if (!Array.isArray(db.broadcast)) db.broadcast = [];
     return orgId ? byOrg(db.broadcast, orgId) : db.broadcast;
   },
-  getOrganizations: () => {
-    if (!Array.isArray(db.organizations)) db.organizations = [];
-    return db.organizations;
+  getOrgById: (id) => (db.organizations || []).find(o => o.id === id) || null,
+  getOrgBySlug: (slug) => (db.organizations || []).find(o => o.slug === slug) || null,
+  addUser: (user) => {
+    user.id = user.id || uuidv4();
+    if (!user.orgId) user.orgId = DEFAULT_ORG_ID;
+    db.users.push(user); persist(); return user;
   },
-  getOrgBySlug: (slug) => {
-    if (!Array.isArray(db.organizations)) db.organizations = [];
-    return db.organizations.find(o => o.slug === slug) || null;
+  updateUser: (id, updates) => {
+    const idx = db.users.findIndex(u => u.id === id);
+    if (idx === -1) return null;
+    db.users[idx] = { ...db.users[idx], ...updates }; persist(); return db.users[idx];
   },
-  addUser: (row) => {
-    row.id = row.id || uuidv4();
-    db.users.push(row); persist(); return row;
-  },
-  addTeam: (row) => {
-    row.id = row.id || uuidv4();
-    if (!row.orgId) row.orgId = DEFAULT_ORG_ID;
-    db.teams.push(row); persist(); return row;
+  addTeam: (team) => {
+    team.id = team.id || uuidv4();
+    if (!team.orgId) team.orgId = DEFAULT_ORG_ID;
+    db.teams.push(team); persist(); return team;
   },
   updateTeam: (id, updates) => {
-    const idx = db.teams.findIndex(x => x.id === id);
+    const idx = db.teams.findIndex(t => t.id === id);
     if (idx === -1) return null;
     db.teams[idx] = { ...db.teams[idx], ...updates }; persist(); return db.teams[idx];
   },
-  addPlayer: (row) => {
-    row.id = row.id || uuidv4();
-    if (!row.orgId) row.orgId = DEFAULT_ORG_ID;
-    db.players.push(row); persist(); return row;
+  addPlayer: (player) => {
+    player.id = player.id || uuidv4();
+    if (!player.orgId) player.orgId = DEFAULT_ORG_ID;
+    db.players.push(player); persist(); return player;
   },
   updatePlayer: (id, updates) => {
-    const idx = db.players.findIndex(x => x.id === id);
+    const idx = db.players.findIndex(p => p.id === id);
     if (idx === -1) return null;
     db.players[idx] = { ...db.players[idx], ...updates }; persist(); return db.players[idx];
   },
-  addAuction: (row) => {
-    row.id = row.id || uuidv4();
-    if (!row.orgId) row.orgId = DEFAULT_ORG_ID;
-    db.auctions.push(row); persist(); return row;
+  addAuction: (auction) => {
+    auction.id = auction.id || uuidv4();
+    if (!auction.orgId) auction.orgId = DEFAULT_ORG_ID;
+    db.auctions.push(auction); persist(); return auction;
   },
   updateAuction: (id, updates) => {
-    const idx = db.auctions.findIndex(x => x.id === id);
+    const idx = db.auctions.findIndex(a => a.id === id);
     if (idx === -1) return null;
     db.auctions[idx] = { ...db.auctions[idx], ...updates }; persist(); return db.auctions[idx];
   },
-  addBid: (row) => {
-    row.id = row.id || uuidv4();
-    db.bids.push(row); persist(); return row;
+  addBid: (bid) => {
+    bid.id = bid.id || uuidv4();
+    if (!bid.orgId) bid.orgId = DEFAULT_ORG_ID;
+    db.bids.push(bid); persist(); return bid;
   },
   removeBid: (id) => {
     const idx = db.bids.findIndex(x => x.id === id);
@@ -143,15 +192,38 @@ module.exports = {
     if (!row.orgId) row.orgId = DEFAULT_ORG_ID;
     db.soldPlayers.push(row); persist(); return row;
   },
-  addMatch: (row) => {
-    row.id = row.id || uuidv4();
-    if (!row.orgId) row.orgId = DEFAULT_ORG_ID;
-    db.matches.push(row); persist(); return row;
+  addMatch: (match) => {
+    match.id = match.id || uuidv4();
+    if (!match.orgId) match.orgId = DEFAULT_ORG_ID;
+    if (!Array.isArray(db.matches)) db.matches = [];
+    db.matches.push(match); persist(); return match;
   },
   updateMatch: (id, updates) => {
-    const idx = db.matches.findIndex(x => x.id === id);
+    if (!Array.isArray(db.matches)) db.matches = [];
+    const idx = db.matches.findIndex(m => m.id === id);
     if (idx === -1) return null;
     db.matches[idx] = { ...db.matches[idx], ...updates }; persist(); return db.matches[idx];
+  },
+  addOrganization: (org) => {
+    org.id = org.id || uuidv4();
+    db.organizations.push(org); persist(); return org;
+  },
+  updateOrganization: (id, updates) => {
+    const idx = db.organizations.findIndex(o => o.id === id);
+    if (idx === -1) return null;
+    db.organizations[idx] = { ...db.organizations[idx], ...updates }; persist(); return db.organizations[idx];
+  },
+  addPayment: (payment) => {
+    if (!Array.isArray(db.payments)) db.payments = [];
+    payment.id = payment.id || uuidv4();
+    if (!payment.orgId) payment.orgId = DEFAULT_ORG_ID;
+    db.payments.push(payment); persist(); return payment;
+  },
+  updatePayment: (id, updates) => {
+    if (!Array.isArray(db.payments)) db.payments = [];
+    const idx = db.payments.findIndex(x => x.id === id);
+    if (idx === -1) return null;
+    db.payments[idx] = { ...db.payments[idx], ...updates }; persist(); return db.payments[idx];
   },
   addTournament: (row) => {
     row.id = row.id || uuidv4();
