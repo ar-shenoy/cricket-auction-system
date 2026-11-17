@@ -59,6 +59,9 @@ export default function BroadcastStudio() {
   };
 
   const uploadImage = async (file: File): Promise<string> => {
+    if (file.size > 1.5 * 1024 * 1024) {
+      throw new Error('File too large (max 1.5 MB). Compress or use a smaller PNG/JPEG.');
+    }
     const fd = new FormData();
     fd.append('file', file);
     const res = await api.post('/upload/image', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
@@ -72,9 +75,9 @@ export default function BroadcastStudio() {
     try {
       const url = await uploadImage(file);
       if (url) setField({ logoUrl: url });
-      setMsg('Logo uploaded');
+      setMsg(file.size <= 400 * 1024 ? 'Logo uploaded (persists across restarts)' : 'Logo uploaded (disk — prefer ≤400 KB for free-tier)');
     } catch (err: any) {
-      setMsg(err.response?.data?.error || 'Logo upload failed');
+      setMsg(err.response?.data?.error || err.message || 'Logo upload failed');
     } finally {
       setUploading(false);
       if (logoFileRef.current) logoFileRef.current.value = '';
@@ -97,7 +100,7 @@ export default function BroadcastStudio() {
         setMsg('Sponsor image added');
       }
     } catch (err: any) {
-      setMsg(err.response?.data?.error || 'Upload failed');
+      setMsg(err.response?.data?.error || err.message || 'Upload failed');
     } finally {
       setUploading(false);
       if (sponsorFileRef.current) sponsorFileRef.current.value = '';
@@ -164,9 +167,11 @@ export default function BroadcastStudio() {
         </div>
       )}
 
-      <div className="glass p-3 mb-4 text-[13px]" style={{ color: 'var(--text-2)' }}>
-        This pack drives the public <strong style={{ color: 'var(--text)' }}>/scoreboard</strong> overlay and the lower-thirds JSON API for OBS / vMix.
-        Open scoreboard: <a href={scoreboardUrl} target="_blank" rel="noreferrer" style={{ color: 'var(--accent)' }}>{scoreboardUrl}</a>
+      <div className="glass p-3 mb-4 text-[13px] space-y-1" style={{ color: 'var(--text-2)' }}>
+        <div>This pack drives <strong style={{ color: 'var(--text)' }}>/scoreboard</strong> and the lower-thirds API for OBS / vMix.</div>
+        <div><strong style={{ color: 'var(--text)' }}>Image limits:</strong> PNG / JPEG / WebP / GIF · max <strong style={{ color: 'var(--text)' }}>1.5 MB</strong> · prefer <strong style={{ color: 'var(--text)' }}>≤400 KB</strong> (survives free-tier restarts).</div>
+        <div><strong style={{ color: 'var(--text)' }}>Recommended sizes:</strong> league logo 256×256 or 400×120 · top/bottom sponsors ~200×60 · side rails ~120×120 · corner ~128×128.</div>
+        <div>Open scoreboard: <a href={scoreboardUrl} target="_blank" rel="noreferrer" style={{ color: 'var(--accent)' }}>{scoreboardUrl}</a></div>
       </div>
 
       <div className="grid lg:grid-cols-2 gap-4">
@@ -183,10 +188,11 @@ export default function BroadcastStudio() {
 
           <div>
             <label className="as-label">Logo URL or upload</label>
+            <p className="text-[11px] mb-1" style={{ color: 'var(--text-2)' }}>Max 1.5 MB · best ≤400 KB · ~256×256 or 400×120</p>
             <div className="flex gap-2 items-center">
               <input className="as-input flex-1" value={brand.logoUrl || ''} onChange={e => setField({ logoUrl: e.target.value })} placeholder="https://… or upload" />
               <button type="button" className="as-btn-ghost text-sm shrink-0" disabled={uploading} onClick={() => logoFileRef.current?.click()}>Upload</button>
-              <input ref={logoFileRef} type="file" accept="image/*" className="hidden" onChange={onLogoFile} />
+              <input ref={logoFileRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif" className="hidden" onChange={onLogoFile} />
             </div>
             {brand.logoUrl && <img src={brand.logoUrl} alt="" className="mt-2 h-12 object-contain rounded-lg" />}
           </div>
@@ -211,7 +217,8 @@ export default function BroadcastStudio() {
         <div className="glass p-4 space-y-3">
           <div className="font-semibold">Sponsor strip (multi-position)</div>
           <p className="text-[12px]" style={{ color: 'var(--text-2)' }}>
-            Add logos and assign ICC-style positions: top bar, bottom ticker, side rails, corner badge.
+            Positions: top bar, bottom ticker, side rails, corner badge.
+            File: max 1.5 MB · prefer ≤400 KB · bars ~200×60 · rails ~120×120 · corner ~128×128.
           </p>
 
           <div className="flex flex-wrap gap-2 items-end">
@@ -227,7 +234,7 @@ export default function BroadcastStudio() {
             </div>
             <button type="button" className="as-btn-ghost text-sm" onClick={addSponsorUrl}>Add URL</button>
             <button type="button" className="as-btn-ghost text-sm" disabled={uploading} onClick={() => sponsorFileRef.current?.click()}>Upload logo</button>
-            <input ref={sponsorFileRef} type="file" accept="image/*" className="hidden" onChange={onSponsorFile} />
+            <input ref={sponsorFileRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif" className="hidden" onChange={onSponsorFile} />
           </div>
 
           <div className="space-y-2 max-h-64 overflow-y-auto">
