@@ -1,123 +1,185 @@
 import React, { useEffect, useState } from 'react';
 import AppShell from '../components/AppShell';
 import api from '../services/api';
-import { Link } from 'react-router-dom';
 
 export default function TournamentHub() {
   const [tournaments, setTournaments] = useState<any[]>([]);
-  const [fixtures, setFixtures] = useState<any[]>([]);
   const [venues, setVenues] = useState<any[]>([]);
+  const [fixtures, setFixtures] = useState<any[]>([]);
   const [teams, setTeams] = useState<any[]>([]);
   const [table, setTable] = useState<any[]>([]);
   const [msg, setMsg] = useState('');
-  const [tForm, setTForm] = useState({ name: '', season: new Date().getFullYear().toString(), format: 'T20' });
-  const [vForm, setVForm] = useState({ name: '', city: '' });
+  const [tForm, setTForm] = useState({ name: '', season: '' });
+  const [vForm, setVForm] = useState({ name: '', city: '', capacity: '' });
+  const [editingVenue, setEditingVenue] = useState<any | null>(null);
   const [fForm, setFForm] = useState({ teamAId: '', teamBId: '', venueId: '', scheduledAt: '', tournamentId: '' });
 
   const load = async () => {
     try {
-      const [t, f, v, tm, s] = await Promise.all([
+      const [t, v, f, s, tm] = await Promise.all([
         api.get('/tournaments'),
-        api.get('/tournaments/fixtures/list'),
         api.get('/tournaments/venues/list'),
-        api.get('/teams'),
-        api.get('/tournaments/standings')
+        api.get('/tournaments/fixtures/list'),
+        api.get('/tournaments/standings'),
+        api.get('/teams')
       ]);
       setTournaments(t.data || []);
-      setFixtures(f.data || []);
       setVenues(v.data || []);
-      setTeams(tm.data || []);
+      setFixtures(f.data || []);
       setTable(s.data?.table || []);
-    } catch (e: any) {
-      setMsg(e.response?.data?.error || 'Load failed');
+      setTeams(tm.data || []);
+      if (!fForm.tournamentId && (t.data || [])[0]?.id) {
+        setFForm(prev => ({ ...prev, tournamentId: t.data[0].id }));
+      }
+    } catch (e) {
+      console.error(e);
     }
   };
 
   useEffect(() => { load(); }, []);
 
+  const flash = (m: string) => { setMsg(m); setTimeout(() => setMsg(''), 3000); };
+
   const createTournament = async () => {
     try {
       await api.post('/tournaments', tForm);
-      setMsg('Season created');
-      setTForm({ name: '', season: tForm.season, format: 'T20' });
+      setTForm({ name: '', season: '' });
+      flash('Season created');
       load();
-    } catch (e: any) { setMsg(e.response?.data?.error || 'Failed'); }
+    } catch (e: any) {
+      flash(e.response?.data?.error || 'Failed');
+    }
   };
 
   const createVenue = async () => {
     try {
-      await api.post('/tournaments/venues', vForm);
-      setVForm({ name: '', city: '' });
+      if (editingVenue) {
+        await api.put(`/tournaments/venues/${editingVenue.id}`, {
+          name: vForm.name, city: vForm.city, capacity: vForm.capacity
+        });
+        flash('Venue updated');
+      } else {
+        await api.post('/tournaments/venues', {
+          name: vForm.name, city: vForm.city,
+          capacity: vForm.capacity ? Number(vForm.capacity) : null
+        });
+        flash('Venue added');
+      }
+      setVForm({ name: '', city: '', capacity: '' });
+      setEditingVenue(null);
       load();
-    } catch (e: any) { setMsg(e.response?.data?.error || 'Failed'); }
+    } catch (e: any) {
+      flash(e.response?.data?.error || 'Venue save failed');
+    }
+  };
+
+  const editVenue = (v: any) => {
+    setEditingVenue(v);
+    setVForm({
+      name: v.name || '',
+      city: v.city || '',
+      capacity: v.capacity != null ? String(v.capacity) : ''
+    });
+  };
+
+  const deleteVenue = async (v: any) => {
+    if (!confirm(`Delete venue "${v.name}"?`)) return;
+    try {
+      await api.delete(`/tournaments/venues/${v.id}`);
+      if (editingVenue?.id === v.id) {
+        setEditingVenue(null);
+        setVForm({ name: '', city: '', capacity: '' });
+      }
+      flash('Venue deleted');
+      load();
+    } catch (e: any) {
+      flash(e.response?.data?.error || 'Delete failed');
+    }
   };
 
   const createFixture = async () => {
     try {
-      await api.post('/tournaments/fixtures', {
-        ...fForm,
-        tournamentId: fForm.tournamentId || tournaments[0]?.id || null
-      });
+      await api.post('/tournaments/fixtures', fForm);
+      flash('Fixture added');
       setFForm({ teamAId: '', teamBId: '', venueId: '', scheduledAt: '', tournamentId: fForm.tournamentId });
       load();
-    } catch (e: any) { setMsg(e.response?.data?.error || 'Failed'); }
+    } catch (e: any) {
+      flash(e.response?.data?.error || 'Fixture failed');
+    }
+  };
+
+  const deleteFixture = async (id: string) => {
+    if (!confirm('Delete this fixture?')) return;
+    try {
+      await api.delete(`/tournaments/fixtures/${id}`);
+      flash('Fixture deleted');
+      load();
+    } catch (e: any) {
+      flash(e.response?.data?.error || 'Delete failed');
+    }
   };
 
   return (
-    <AppShell title="Tournament Hub" subtitle="Seasons · fixtures · venues · standings">
+    <AppShell title="Tournament Hub" subtitle="Seasons · fixtures · venues · standings (ICC tournament ops)">
       {msg && <div className="glass p-3 mb-4 text-[13px]" style={{ color: 'var(--accent)' }}>{msg}</div>}
 
-      <div className="flex flex-wrap gap-2 mb-4">
-        <a href="/tournament" target="_blank" rel="noreferrer" className="as-btn-primary text-sm">Public tournament page</a>
-        <Link to="/intelligence" className="as-btn-ghost text-sm">Intelligence</Link>
-        <Link to="/points" className="as-btn-ghost text-sm">Points</Link>
-      </div>
-
-      <div className="grid lg:grid-cols-2 gap-4 mb-4">
-        <div className="glass p-4 space-y-3">
-          <div className="font-semibold">New season</div>
-          <input className="as-input" placeholder="Tournament name" value={tForm.name} onChange={e => setTForm({ ...tForm, name: e.target.value })} />
-          <div className="grid grid-cols-2 gap-2">
-            <input className="as-input" placeholder="Season" value={tForm.season} onChange={e => setTForm({ ...tForm, season: e.target.value })} />
-            <select className="as-input" value={tForm.format} onChange={e => setTForm({ ...tForm, format: e.target.value })}>
-              <option value="T20">T20</option>
-              <option value="ODI">ODI</option>
-              <option value="Other">Other</option>
-            </select>
-          </div>
+      <div className="grid lg:grid-cols-3 gap-4 mb-4">
+        <div className="glass p-4 space-y-2">
+          <div className="font-semibold">Season / tournament</div>
+          <input className="as-input" placeholder="Name (e.g. T20 World Cup)" value={tForm.name} onChange={e => setTForm({ ...tForm, name: e.target.value })} />
+          <input className="as-input" placeholder="Season (2026)" value={tForm.season} onChange={e => setTForm({ ...tForm, season: e.target.value })} />
           <button type="button" className="as-btn-primary text-sm" onClick={createTournament}>Create season</button>
-          <div className="space-y-1 pt-2">
+          <div className="space-y-1 max-h-32 overflow-y-auto pt-2">
             {tournaments.map(t => (
               <div key={t.id} className="text-[13px] px-2 py-1.5 rounded-lg" style={{ background: 'var(--fill)' }}>
-                {t.name} · {t.season} · {t.format} · {t.status}
+                {t.name}{t.season ? ` · ${t.season}` : ''}
               </div>
             ))}
           </div>
         </div>
 
-        <div className="glass p-4 space-y-3">
-          <div className="font-semibold">Venue</div>
+        <div className="glass p-4 space-y-2">
+          <div className="font-semibold flex justify-between items-center">
+            <span>Venues</span>
+            {editingVenue && (
+              <button type="button" className="text-[12px]" style={{ color: 'var(--text-2)' }} onClick={() => { setEditingVenue(null); setVForm({ name: '', city: '', capacity: '' }); }}>Cancel edit</button>
+            )}
+          </div>
           <input className="as-input" placeholder="Venue name" value={vForm.name} onChange={e => setVForm({ ...vForm, name: e.target.value })} />
           <input className="as-input" placeholder="City" value={vForm.city} onChange={e => setVForm({ ...vForm, city: e.target.value })} />
-          <button type="button" className="as-btn-ghost text-sm" onClick={createVenue}>Add venue</button>
-          <div className="flex flex-wrap gap-1.5 pt-2">
+          <input className="as-input" type="number" placeholder="Capacity (optional)" value={vForm.capacity} onChange={e => setVForm({ ...vForm, capacity: e.target.value })} />
+          <button type="button" className="as-btn-ghost text-sm" onClick={createVenue}>{editingVenue ? 'Save venue' : 'Add venue'}</button>
+          <div className="space-y-1 max-h-40 overflow-y-auto pt-1">
             {venues.map(v => (
-              <span key={v.id} className="glass-island text-[12px]">{v.name}{v.city ? `, ${v.city}` : ''}</span>
+              <div key={v.id} className="text-[13px] flex justify-between gap-2 items-center px-2 py-1.5 rounded-lg" style={{ background: 'var(--fill)' }}>
+                <span className="min-w-0 truncate">
+                  <span className="font-medium">{v.name}</span>
+                  {v.city ? <span style={{ color: 'var(--text-2)' }}> · {v.city}</span> : null}
+                  {v.capacity != null ? <span style={{ color: 'var(--text-2)' }}> · {Number(v.capacity).toLocaleString()}</span> : null}
+                </span>
+                <span className="shrink-0 flex gap-2">
+                  <button type="button" className="text-[12px]" style={{ color: 'var(--accent)' }} onClick={() => editVenue(v)}>Edit</button>
+                  <button type="button" className="text-[12px]" style={{ color: '#ff3b30' }} onClick={() => deleteVenue(v)}>Delete</button>
+                </span>
+              </div>
             ))}
+            {venues.length === 0 && <div className="text-[13px] text-center py-2" style={{ color: 'var(--text-2)' }}>No venues</div>}
           </div>
         </div>
-      </div>
 
-      <div className="glass p-4 mb-4 space-y-3">
-        <div className="font-semibold">Schedule fixture</div>
-        <div className="grid sm:grid-cols-2 lg:grid-cols-5 gap-2">
+        <div className="glass p-4 space-y-2">
+          <div className="font-semibold">Fixture</div>
+          <select className="as-input" value={fForm.tournamentId} onChange={e => setFForm({ ...fForm, tournamentId: e.target.value })}>
+            <option value="">Season</option>
+            {tournaments.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </select>
           <select className="as-input" value={fForm.teamAId} onChange={e => setFForm({ ...fForm, teamAId: e.target.value })}>
             <option value="">Team A</option>
-            {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+            {teams.map(tm => <option key={tm.id} value={tm.id}>{tm.name}</option>)}
           </select>
           <select className="as-input" value={fForm.teamBId} onChange={e => setFForm({ ...fForm, teamBId: e.target.value })}>
             <option value="">Team B</option>
-            {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+            {teams.map(tm => <option key={tm.id} value={tm.id}>{tm.name}</option>)}
           </select>
           <select className="as-input" value={fForm.venueId} onChange={e => setFForm({ ...fForm, venueId: e.target.value })}>
             <option value="">Venue</option>
@@ -126,12 +188,17 @@ export default function TournamentHub() {
           <input className="as-input" type="datetime-local" value={fForm.scheduledAt} onChange={e => setFForm({ ...fForm, scheduledAt: e.target.value })} />
           <button type="button" className="as-btn-primary text-sm" onClick={createFixture}>Add fixture</button>
         </div>
-        <div className="space-y-1 max-h-48 overflow-y-auto">
+      </div>
+
+      <div className="glass p-4 mb-4">
+        <div className="font-semibold mb-2">Fixtures</div>
+        <div className="space-y-1 max-h-56 overflow-y-auto">
           {fixtures.map(f => (
-            <div key={f.id} className="text-[13px] flex justify-between gap-2 px-2 py-1.5 rounded-lg" style={{ background: 'var(--fill)' }}>
+            <div key={f.id} className="text-[13px] flex justify-between gap-2 px-2 py-1.5 rounded-lg items-center" style={{ background: 'var(--fill)' }}>
               <span>{f.teamA?.name || 'TBD'} vs {f.teamB?.name || 'TBD'}{f.venue ? ` · ${f.venue.name}` : ''}</span>
-              <span className="tabular-nums shrink-0" style={{ color: 'var(--text-2)' }}>
-                {f.scheduledAt ? new Date(f.scheduledAt).toLocaleString() : 'TBD'}
+              <span className="flex items-center gap-2 shrink-0">
+                <span className="tabular-nums" style={{ color: 'var(--text-2)' }}>{f.scheduledAt ? new Date(f.scheduledAt).toLocaleString() : 'TBD'}</span>
+                <button type="button" className="text-[12px]" style={{ color: '#ff3b30' }} onClick={() => deleteFixture(f.id)}>Delete</button>
               </span>
             </div>
           ))}
