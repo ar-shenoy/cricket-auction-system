@@ -85,7 +85,7 @@ export default function Scoreboard() {
       const kind = classifyEvent(over[over.length - 1]);
       if (kind) {
         setFlash(kind);
-        const t = setTimeout(() => setFlash(null), kind === 'WICKET' || kind === 'SIX' ? 2200 : 1400);
+        const t = setTimeout(() => setFlash(null), kind === 'WICKET' || kind === 'SIX' ? 3200 : 2500);
         return () => clearTimeout(t);
       }
     }
