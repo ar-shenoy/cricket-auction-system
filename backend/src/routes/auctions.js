@@ -60,7 +60,6 @@ router.get('/', authMiddleware, (req, res) => {
 
 router.get('/active', authMiddleware, (req, res) => {
   const auctions = getAuctions();
-  // Prefer live/paused/draft — never auto-pick a completed auction as "active"
   const active = auctions.find(a => a.status === 'live' || a.status === 'paused' || a.status === 'draft')
     || null;
   res.json(active);
@@ -119,7 +118,27 @@ router.post('/:id/pause', authMiddleware, requireRole('admin'), (req, res) => {
   const auction = getAuctions().find(a => a.id === req.params.id);
   if (!auction) return res.status(404).json({ error: 'Auction not found' });
   const newStatus = auction.status === 'paused' ? 'live' : 'paused';
-  const updated = updateAuction(auction.id, { status: newStatus, timerEndsAt: newStatus === 'paused' ? null : auction.timerEndsAt });
+  const reason = (req.body && req.body.reason) ? String(req.body.reason).trim().slice(0, 200) : '';
+  const pauseLog = Array.isArray(auction.pauseLog) ? [...auction.pauseLog] : [];
+  if (newStatus === 'paused') {
+    pauseLog.push({
+      at: new Date().toISOString(),
+      reason: reason || 'unspecified',
+      by: req.user?.email || req.user?.id || null
+    });
+  } else {
+    pauseLog.push({
+      at: new Date().toISOString(),
+      reason: 'resumed',
+      by: req.user?.email || req.user?.id || null
+    });
+  }
+  const updated = updateAuction(auction.id, {
+    status: newStatus,
+    timerEndsAt: newStatus === 'paused' ? null : auction.timerEndsAt,
+    pauseReason: newStatus === 'paused' ? (reason || 'unspecified') : null,
+    pauseLog
+  });
   emitAuction(req.app.get('io'), auction.id, 'auction-status', updated);
   res.json(updated);
 });
@@ -374,7 +393,19 @@ router.get('/:id/available-players', authMiddleware, (req, res) => {
 });
 
 router.get('/:id/bids', authMiddleware, (req, res) => {
-  res.json(getBids().filter(b => b.auctionId === req.params.id));
+  let bids = getBids().filter(b => b.auctionId === req.params.id);
+  if (req.query.playerId) {
+    bids = bids.filter(b => b.playerId === req.query.playerId);
+  }
+  const teams = getTeams();
+  bids = bids
+    .slice()
+    .sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0))
+    .map(b => ({
+      ...b,
+      teamName: teams.find(t => t.id === b.teamId)?.name || null
+    }));
+  res.json(bids);
 });
 
 router.get('/:id/public/bids', (req, res) => {
@@ -384,6 +415,107 @@ router.get('/:id/public/bids', (req, res) => {
     ...b,
     teamName: teams.find(t => t.id === b.teamId)?.name
   })));
+});
+
+/** Full auction session report */
+router.get('/:id/report', authMiddleware, (req, res) => {
+  try {
+    const auction = getAuctions().find(a => a.id === req.params.id);
+    if (!auction) return res.status(404).json({ error: 'Auction not found' });
+
+    const players = getPlayers();
+    const teams = getTeams();
+    const sold = getSoldPlayers().filter(s => s.auctionId === auction.id);
+    const bids = getBids().filter(b => b.auctionId === auction.id);
+
+    const soldRows = sold.map(s => {
+      const pl = players.find(p => p.id === s.playerId);
+      const tm = teams.find(t => t.id === s.teamId);
+      return {
+        playerId: s.playerId,
+        playerName: pl?.name || s.playerName || s.playerId,
+        role: pl?.role || s.role || null,
+        teamId: s.teamId,
+        teamName: tm?.name || s.teamName || s.teamId,
+        soldPrice: Number(s.soldPrice) || 0,
+        soldAt: s.soldAt || s.createdAt || null,
+        basePrice: pl?.basePrice != null ? Number(pl.basePrice) : null
+      };
+    }).sort((a, b) => b.soldPrice - a.soldPrice);
+
+    const soldIds = new Set(sold.map(s => s.playerId));
+    const unsold = players
+      .filter(p => p.status === 'Unsold' || (p.auctionStatus === 'Unsold') || (p.status === 'Approved' && !soldIds.has(p.id) && auction.status === 'completed'))
+      .map(p => ({
+        playerId: p.id,
+        playerName: p.name,
+        role: p.role || null,
+        basePrice: Number(p.basePrice) || 0,
+        status: p.auctionStatus || p.status
+      }));
+
+    const teamSpend = teams.map(t => {
+      const buys = soldRows.filter(s => s.teamId === t.id);
+      const spent = buys.reduce((a, x) => a + x.soldPrice, 0);
+      return {
+        teamId: t.id,
+        teamName: t.name,
+        purse: Number(t.purse) || 0,
+        remainingPurse: Number(t.remainingPurse) != null ? Number(t.remainingPurse) : (Number(t.purse) || 0) - spent,
+        spent,
+        playersBought: buys.length,
+        buys
+      };
+    }).sort((a, b) => b.spent - a.spent);
+
+    const byRole = {};
+    soldRows.forEach(s => {
+      const role = s.role || 'Unknown';
+      if (!byRole[role]) byRole[role] = { role, count: 0, spend: 0 };
+      byRole[role].count += 1;
+      byRole[role].spend += s.soldPrice;
+    });
+    const roleAverages = Object.values(byRole).map(r => ({
+      role: r.role,
+      count: r.count,
+      spend: r.spend,
+      avgPrice: r.count ? Math.round(r.spend / r.count) : 0
+    })).sort((a, b) => b.avgPrice - a.avgPrice);
+
+    const totalSpend = soldRows.reduce((a, s) => a + s.soldPrice, 0);
+    const prices = soldRows.map(s => s.soldPrice).filter(n => n > 0).sort((a, b) => a - b);
+    const avgPrice = soldRows.length ? Math.round(totalSpend / soldRows.length) : 0;
+    const medianPrice = prices.length
+      ? (prices.length % 2 ? prices[(prices.length - 1) / 2] : Math.round((prices[prices.length / 2 - 1] + prices[prices.length / 2]) / 2))
+      : 0;
+
+    res.json({
+      generatedAt: new Date().toISOString(),
+      auction: {
+        id: auction.id,
+        name: auction.name,
+        status: auction.status,
+        pauseReason: auction.pauseReason || null,
+        pauseLog: auction.pauseLog || []
+      },
+      summary: {
+        soldCount: soldRows.length,
+        unsoldCount: unsold.length,
+        totalSpend,
+        avgPrice,
+        medianPrice,
+        bidCount: bids.length,
+        teamsCount: teams.length
+      },
+      sold: soldRows,
+      unsold,
+      teamSpend,
+      roleAverages
+    });
+  } catch (err) {
+    console.error('report error', err);
+    res.status(500).json({ error: 'Failed to build report' });
+  }
 });
 
 module.exports = router;
