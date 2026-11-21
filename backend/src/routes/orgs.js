@@ -13,7 +13,9 @@ const {
   getTeams,
   getPlayers,
   getMatches,
-  getAuctions
+  getAuctions,
+  getSoldPlayers,
+  getBids
 } = require('../data/store');
 const { authMiddleware, requireRole, JWT_SECRET } = require('../middleware/auth');
 const { tenantMiddleware } = require('../middleware/tenant');
@@ -29,12 +31,10 @@ function slugify(name) {
     .slice(0, 40) || 'org';
 }
 
-/** Public: list plans (marketing) */
 router.get('/plans', (req, res) => {
   res.json(Object.values(PLANS));
 });
 
-/** Register new organization + owner admin */
 router.post('/register', async (req, res) => {
   try {
     const { orgName, name, email, password } = req.body;
@@ -118,11 +118,11 @@ function publicOrg(org) {
     planExpiresAt: org.planExpiresAt || null,
     limits: plan.limits,
     planName: plan.name,
-    features: getFeatures(org)
+    features: getFeatures(org),
+    soldWebhookUrl: org.soldWebhookUrl || ''
   };
 }
 
-/** Current org (auth) */
 router.get('/me', authMiddleware, tenantMiddleware, (req, res) => {
   const teams = getTeams(req.orgId).length;
   const players = getPlayers(req.orgId).length;
@@ -135,14 +135,20 @@ router.get('/me', authMiddleware, tenantMiddleware, (req, res) => {
 });
 
 router.patch('/me', authMiddleware, requireRole('admin'), tenantMiddleware, (req, res) => {
-  const { name } = req.body;
+  const { name, soldWebhookUrl } = req.body;
   const updates = {};
   if (name) updates.name = String(name).trim().slice(0, 80);
+  if (soldWebhookUrl !== undefined) {
+    const u = String(soldWebhookUrl || '').trim();
+    if (u && !/^https?:\/\//i.test(u)) {
+      return res.status(400).json({ error: 'soldWebhookUrl must be http(s)' });
+    }
+    updates.soldWebhookUrl = u.slice(0, 500);
+  }
   const updated = updateOrganization(req.orgId, updates);
   res.json(publicOrg(updated));
 });
 
-/** Public org by slug (for branded public pages later) */
 router.get('/public/:slug', (req, res) => {
   const org = getOrgBySlug(req.params.slug);
   if (!org) return res.status(404).json({ error: 'Not found' });
@@ -153,12 +159,11 @@ router.get('/public/:slug', (req, res) => {
   });
 });
 
-/** Feature flags — read: any auth; write: developer only */
 router.get('/features', authMiddleware, tenantMiddleware, (req, res) => {
   res.json({ features: getFeatures(req.org), defaults: DEFAULT_FEATURES });
 });
 
-router.put('/features', authMiddleware, requireRole('developer'), tenantMiddleware, (req, res) => {
+router.put('/features', authMiddleware, requireRole('admin'), tenantMiddleware, (req, res) => {
   const incoming = req.body?.features && typeof req.body.features === 'object' ? req.body.features : {};
   const merged = { ...getFeatures(req.org) };
   Object.keys(DEFAULT_FEATURES).forEach(k => {
@@ -168,7 +173,6 @@ router.put('/features', authMiddleware, requireRole('developer'), tenantMiddlewa
   res.json({ features: getFeatures(updated), message: 'Features updated' });
 });
 
-/** Public features for live/results pages */
 router.get('/public-features', (req, res) => {
   const orgId = req.query.orgId || req.headers['x-org-id'];
   let org = null;
@@ -178,6 +182,35 @@ router.get('/public-features', (req, res) => {
     org = all[0] || null;
   }
   res.json({ features: getFeatures(org) });
+});
+
+router.get('/export', authMiddleware, tenantMiddleware, (req, res) => {
+  const role = req.user?.role;
+  if (role !== 'admin' && role !== 'developer') {
+    return res.status(403).json({ error: 'Admin only' });
+  }
+  const orgId = req.orgId;
+  const org = getOrgById(orgId) || req.org;
+  const dump = {
+    exportedAt: new Date().toISOString(),
+    org: org
+      ? {
+          id: org.id,
+          name: org.name,
+          slug: org.slug,
+          plan: org.plan,
+          features: org.features || null
+        }
+      : null,
+    teams: getTeams(orgId),
+    players: getPlayers(orgId),
+    auctions: getAuctions(orgId),
+    soldPlayers: typeof getSoldPlayers === 'function' ? getSoldPlayers(orgId) : [],
+    bids: typeof getBids === 'function' ? getBids(orgId) : [],
+    matches: getMatches(orgId)
+  };
+  res.setHeader('Content-Disposition', `attachment; filename="auctionscore-org-${org?.slug || orgId || 'export'}.json"`);
+  res.json(dump);
 });
 
 module.exports = router;
