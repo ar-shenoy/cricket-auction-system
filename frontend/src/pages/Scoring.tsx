@@ -11,7 +11,7 @@ interface MatchDisplay {
 interface Match {
   id: string; name: string; teamAName: string; teamBName: string; squadA?: string[]; squadB?: string[];
   oversLimit: number; innings: number; status: string; battingSide: string; powerplayOvers?: number;
-  innings1: any; innings2: any; display?: MatchDisplay; result?: string | null;
+  innings1: any; innings2: any; display?: MatchDisplay; result?: string | null; published?: boolean;
 }
 
 const DISMISSALS = ['bowled','caught','lbw','run_out','stumped','hit_wicket','retired_hurt','obstructing'];
@@ -34,6 +34,8 @@ export default function Scoring() {
   const [soldByTeam, setSoldByTeam] = useState<Record<string, string[]>>({});
   const [importTeamA, setImportTeamA] = useState('');
   const [importTeamB, setImportTeamB] = useState('');
+  const [bigTap, setBigTap] = useState(false);
+  const [commentary, setCommentary] = useState('');
   const squadCsvARef = useRef<HTMLInputElement>(null);
   const squadCsvBRef = useRef<HTMLInputElement>(null);
 
@@ -88,12 +90,34 @@ export default function Scoring() {
     })();
   }, [showCreate]);
 
+  // Keyboard shortcuts (power users)
+  useEffect(() => {
+    if (!match || match.status === 'completed') return;
+    const onKey = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      const k = e.key.toLowerCase();
+      if (k >= '0' && k <= '6') {
+        e.preventDefault();
+        if (k === '0') sendEvent('run', { runs: 0 });
+        else if (k === '4') sendEvent('four');
+        else if (k === '6') sendEvent('six');
+        else sendEvent('run', { runs: Number(k) });
+      } else if (k === 'w') { e.preventDefault(); setShowWicket(true); }
+      else if (k === 'x') { e.preventDefault(); sendEvent('wide'); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [match?.id, match?.status]);
+
   const flash = (t: string) => { setMsg(t); setTimeout(() => setMsg(null), 2800); };
   const isAdmin = user?.role === 'admin' || user?.role === 'developer';
   const d = match?.display;
   const battingSquad = match ? ((match.battingSide === 'A' ? match.squadA : match.squadB) || []) : [];
   const bowlingSquad = match ? ((match.battingSide === 'A' ? match.squadB : match.squadA) || []) : [];
-  const btn = 'as-btn-ghost text-sm min-w-[2.75rem]';
+  const btn = bigTap
+    ? 'min-h-[72px] min-w-[72px] rounded-2xl text-xl font-bold active:scale-95 transition'
+    : 'min-h-[52px] min-w-[52px] rounded-2xl text-lg font-bold active:scale-95 transition';
 
   const parseSquadCsv = (text: string): string[] => {
     const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
@@ -118,20 +142,6 @@ export default function Scoring() {
     e.target.value = '';
   };
 
-  const applyAuctionSquads = () => {
-    const namesA = importTeamA ? (soldByTeam[importTeamA] || []) : [];
-    const namesB = importTeamB ? (soldByTeam[importTeamB] || []) : [];
-    const teamA = auctionTeams.find(t => t.id === importTeamA);
-    const teamB = auctionTeams.find(t => t.id === importTeamB);
-    setForm(f => ({
-      ...f,
-      teamAName: teamA?.name || f.teamAName,
-      teamBName: teamB?.name || f.teamBName,
-      squadA: namesA.length ? namesA.join(', ') : f.squadA,
-      squadB: namesB.length ? namesB.join(', ') : f.squadB
-    }));
-  };
-
   const createMatch = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -140,7 +150,7 @@ export default function Scoring() {
         oversLimit: Number(form.oversLimit) || 20, powerplayOvers: Number(form.powerplayOvers) || 6,
         battingFirst: form.battingFirst, squadA: form.squadA, squadB: form.squadB
       });
-      setMatch(res.data); setShowCreate(false); flash('Match started — set openers & bowler'); load();
+      setMatch(res.data); setShowCreate(false); flash('Match started'); load();
     } catch (err: any) { alert(err.response?.data?.error || 'Failed to create match'); }
   };
 
@@ -149,13 +159,15 @@ export default function Scoring() {
     try {
       const res = await api.post(`/matches/${match.id}/personnel`, { striker: strikerIn, nonStriker: nonStrikerIn, bowler: bowlerIn });
       setMatch(res.data); flash('Personnel saved');
-    } catch (err: any) { alert(err.response?.data?.error || 'Failed to save personnel'); }
+    } catch (err: any) { alert(err.response?.data?.error || 'Failed'); }
   };
 
   const sendEvent = async (type: string, extra?: Record<string, any>) => {
     if (!match) return;
     try {
-      const res = await api.post(`/matches/${match.id}/event`, { type, ...extra });
+      const payload: any = { type, ...extra };
+      if (commentary.trim()) { payload.commentary = commentary.trim(); setCommentary(''); }
+      const res = await api.post(`/matches/${match.id}/event`, payload);
       setMatch(res.data);
       if (type === 'wicket') setShowWicket(false);
     } catch (err: any) { alert(err.response?.data?.error || 'Ball failed'); }
@@ -179,6 +191,18 @@ export default function Scoring() {
     catch (err: any) { alert(err.response?.data?.error || 'Failed'); }
   };
 
+  const publishResult = async () => {
+    if (!match) return;
+    try {
+      const res = await api.post(`/matches/${match.id}/publish`);
+      setMatch(res.data);
+      flash('Result published — points table updated');
+      load();
+    } catch (err: any) {
+      alert(err.response?.data?.error || 'Publish failed');
+    }
+  };
+
   if (loading) return <AppShell title="Scoring"><div className="glass p-8 text-center" style={{ color: 'var(--text-2)' }}>Loading…</div></AppShell>;
 
   return (
@@ -191,6 +215,9 @@ export default function Scoring() {
             {showCreate ? 'Cancel' : '+ New match'}
           </button>
         )}
+        <button type="button" onClick={() => setBigTap(b => !b)} className="as-btn-ghost text-sm">
+          {bigTap ? 'Normal buttons' : 'Big-tap mode'}
+        </button>
         {matches.map(m => (
           <button key={m.id} type="button" onClick={() => setMatch(m)} className="glass-island text-[12px] whitespace-nowrap"
             style={match?.id === m.id ? { background: 'var(--accent)', color: '#fff' } : undefined}>
@@ -204,30 +231,6 @@ export default function Scoring() {
           <div className="font-semibold">New match</div>
           <input className="as-input" placeholder="Match name (optional)" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
           <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label className="as-label">Team A (franchise dropdown)</label>
-              <select className="as-input" value={importTeamA} onChange={e => {
-                const id = e.target.value; setImportTeamA(id);
-                const t = auctionTeams.find(x => x.id === id);
-                if (t) setForm(f => ({ ...f, teamAName: t.name, squadA: (soldByTeam[id] || []).join(', ') || f.squadA }));
-              }}>
-                <option value="">— or type name below —</option>
-                {auctionTeams.map(t => <option key={t.id} value={t.id}>{t.name} ({(soldByTeam[t.id] || []).length} sold)</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="as-label">Team B (franchise dropdown)</label>
-              <select className="as-input" value={importTeamB} onChange={e => {
-                const id = e.target.value; setImportTeamB(id);
-                const t = auctionTeams.find(x => x.id === id);
-                if (t) setForm(f => ({ ...f, teamBName: t.name, squadB: (soldByTeam[id] || []).join(', ') || f.squadB }));
-              }}>
-                <option value="">— or type name below —</option>
-                {auctionTeams.map(t => <option key={t.id} value={t.id}>{t.name} ({(soldByTeam[t.id] || []).length} sold)</option>)}
-              </select>
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-2">
             <input className="as-input" placeholder="Team A name" required value={form.teamAName} onChange={e => setForm({ ...form, teamAName: e.target.value })} />
             <input className="as-input" placeholder="Team B name" required value={form.teamBName} onChange={e => setForm({ ...form, teamBName: e.target.value })} />
           </div>
@@ -240,14 +243,13 @@ export default function Scoring() {
             </div>
           </div>
           <div>
-            <label className="as-label">Squad B (comma-separated or CSV)</label>
+            <label className="as-label">Squad B</label>
             <div className="flex gap-2">
               <input className="as-input flex-1" placeholder="Babar, Rizwan, …" value={form.squadB} onChange={e => setForm({ ...form, squadB: e.target.value })} />
               <button type="button" className="as-btn-ghost text-sm shrink-0" onClick={() => squadCsvBRef.current?.click()}>CSV</button>
               <input ref={squadCsvBRef} type="file" accept=".csv,text/csv" className="hidden" onChange={onSquadCsv('B')} />
             </div>
           </div>
-          <button type="button" className="as-btn-ghost text-sm" onClick={applyAuctionSquads}>Fill both squads from auction sold players</button>
           <div className="grid grid-cols-3 gap-2">
             <input className="as-input" type="number" placeholder="Overs" value={form.oversLimit} onChange={e => setForm({ ...form, oversLimit: e.target.value })} />
             <input className="as-input" type="number" placeholder="PP overs" value={form.powerplayOvers} onChange={e => setForm({ ...form, powerplayOvers: e.target.value })} />
@@ -260,7 +262,7 @@ export default function Scoring() {
         </form>
       )}
 
-      {!match && <div className="glass p-8 text-center" style={{ color: 'var(--text-2)' }}>No match selected. Create one to start scoring.</div>}
+      {!match && <div className="glass p-8 text-center" style={{ color: 'var(--text-2)' }}>No match selected.</div>}
 
       {match && (
         <div className="space-y-4">
@@ -280,6 +282,9 @@ export default function Scoring() {
               ))}
             </div>
             {match.result && <div className="mt-2 text-[14px] font-medium" style={{ color: 'var(--accent)' }}>{match.result}</div>}
+            {match.status === 'completed' && !match.published && isAdmin && (
+              <button type="button" onClick={publishResult} className="as-btn-primary text-sm mt-2">Publish result</button>
+            )}
           </div>
 
           {isAdmin && !['completed', 'abandoned'].includes(match.status) && (
@@ -287,9 +292,9 @@ export default function Scoring() {
               <div className="glass p-4 space-y-2">
                 <div className="font-semibold text-[14px]">Openers & bowler</div>
                 <div className="grid sm:grid-cols-3 gap-2">
-                  <div><label className="as-label">Striker</label><input className="as-input" list="squad-bat" value={strikerIn} onChange={e => setStrikerIn(e.target.value)} placeholder="Name" /></div>
-                  <div><label className="as-label">Non-striker</label><input className="as-input" list="squad-bat" value={nonStrikerIn} onChange={e => setNonStrikerIn(e.target.value)} placeholder="Name" /></div>
-                  <div><label className="as-label">Bowler</label><input className="as-input" list="squad-bowl" value={bowlerIn} onChange={e => setBowlerIn(e.target.value)} placeholder="Name" /></div>
+                  <div><label className="as-label">Striker</label><input className="as-input" list="squad-bat" value={strikerIn} onChange={e => setStrikerIn(e.target.value)} /></div>
+                  <div><label className="as-label">Non-striker</label><input className="as-input" list="squad-bat" value={nonStrikerIn} onChange={e => setNonStrikerIn(e.target.value)} /></div>
+                  <div><label className="as-label">Bowler</label><input className="as-input" list="squad-bowl" value={bowlerIn} onChange={e => setBowlerIn(e.target.value)} /></div>
                 </div>
                 <datalist id="squad-bat">{battingSquad.map(n => <option key={n} value={n} />)}</datalist>
                 <datalist id="squad-bowl">{bowlingSquad.map(n => <option key={n} value={n} />)}</datalist>
@@ -297,31 +302,29 @@ export default function Scoring() {
               </div>
 
               <div className="glass p-4">
-                <div className="font-semibold text-[14px] mb-2">Ball</div>
+                <div className="font-semibold text-[14px] mb-2">Ball · keys 0–6 W X</div>
+                <input className="as-input mb-2" placeholder="Optional commentary line for this ball" value={commentary} onChange={e => setCommentary(e.target.value)} />
                 <div className="flex flex-wrap gap-2">
                   {[0, 1, 2, 3].map(r => (
                     <button key={r} type="button" className={btn} style={{ background: 'var(--fill)' }} onClick={() => sendEvent('run', { runs: r })}>{r}</button>
                   ))}
                   <button type="button" className={btn} style={{ background: '#30d158', color: '#fff' }} onClick={() => sendEvent('four')}>4</button>
                   <button type="button" className={btn} style={{ background: '#0a84ff', color: '#fff' }} onClick={() => sendEvent('six')}>6</button>
-                  <button type="button" className={btn} style={{ background: '#ff3b30', color: '#fff' }} onClick={() => setShowWicket(true)}>Wicket</button>
-                  <button type="button" className={btn} style={{ background: '#ff9f0a', color: '#fff' }} onClick={() => sendEvent('wide')}>Wide</button>
-                  <button type="button" className={btn} style={{ background: '#ff9f0a', color: '#fff' }} onClick={() => sendEvent('no_ball')}>No-ball</button>
+                  <button type="button" className={btn} style={{ background: '#ff3b30', color: '#fff' }} onClick={() => setShowWicket(true)}>W</button>
+                  <button type="button" className={btn} style={{ background: '#ff9f0a', color: '#fff' }} onClick={() => sendEvent('wide')}>Wd</button>
+                  <button type="button" className={btn} style={{ background: '#ff9f0a', color: '#fff' }} onClick={() => sendEvent('no_ball')}>Nb</button>
                   <button type="button" className={btn} style={{ background: 'var(--fill)' }} onClick={() => sendEvent('bye', { runs: 1 })}>Bye</button>
-                  <button type="button" className={btn} style={{ background: 'var(--fill)' }} onClick={() => sendEvent('legbye', { runs: 1 })}>Leg-bye</button>
-                  <button type="button" className={btn} style={{ background: 'var(--fill)' }} onClick={() => sendEvent('dead_ball')}>Dead ball</button>
-                  <button type="button" className={btn} style={{ background: 'var(--fill)' }} onClick={() => sendEvent('penalty', { runs: 5 })}>Penalty +5</button>
+                  <button type="button" className={btn} style={{ background: 'var(--fill)' }} onClick={() => sendEvent('legbye', { runs: 1 })}>Lb</button>
                   <button type="button" className={btn} onClick={undo}>Undo</button>
                 </div>
                 {showWicket && (
                   <div className="mt-3 p-3 rounded-xl space-y-2" style={{ background: 'var(--fill)' }}>
-                    <div className="text-[13px] font-medium">Dismissal type</div>
                     <select className="as-input" value={dismissal} onChange={e => setDismissal(e.target.value)}>
                       {DISMISSALS.map(x => <option key={x} value={x}>{x.replace(/_/g, ' ')}</option>)}
                     </select>
-                    <input className="as-input" placeholder="Fielder (optional)" value={fielder} onChange={e => setFielder(e.target.value)} />
+                    <input className="as-input" placeholder="Fielder" value={fielder} onChange={e => setFielder(e.target.value)} />
                     <div className="flex gap-2">
-                      <button type="button" className="as-btn-primary text-sm" onClick={() => sendEvent('wicket', { dismissal, fielder: fielder || undefined })}>Confirm wicket</button>
+                      <button type="button" className="as-btn-primary text-sm" onClick={() => sendEvent('wicket', { dismissal, fielder: fielder || undefined })}>Confirm</button>
                       <button type="button" className="as-btn-ghost text-sm" onClick={() => setShowWicket(false)}>Cancel</button>
                     </div>
                   </div>
