@@ -5,13 +5,28 @@ const { v4: uuidv4 } = require('uuid');
 const DATA_FILE = path.join(__dirname, 'db.json');
 const DEFAULT_ORG_ID = 'org-default';
 
-let db = {
+const defaultData = {
   organizations: [
-    { id: DEFAULT_ORG_ID, name: 'Default League', slug: 'default', plan: 'free', createdAt: new Date().toISOString() }
+    {
+      id: DEFAULT_ORG_ID,
+      name: 'Default League',
+      slug: 'default',
+      plan: 'free',
+      planExpiresAt: null,
+      razorpaySubId: null,
+      createdAt: new Date().toISOString()
+    }
   ],
   users: [
-    { id: 'admin-001', name: 'League Admin', email: 'admin@auction.com', password: 'admin123', role: 'admin', teamId: null, orgId: DEFAULT_ORG_ID },
-    { id: 'dev-001', name: 'Platform Developer', email: 'developer@auction.com', password: 'devxai2026', role: 'developer', teamId: null, orgId: DEFAULT_ORG_ID }
+    {
+      id: 'admin-001',
+      name: 'Super Admin',
+      email: 'admin@auction.com',
+      password: 'admin123',
+      role: 'admin',
+      teamId: null,
+      orgId: DEFAULT_ORG_ID
+    }
   ],
   teams: [],
   players: [],
@@ -20,10 +35,12 @@ let db = {
   soldPlayers: [],
   matches: [],
   payments: [],
-  tournaments: [],
+  auditLog: [],
+  broadcast: [],
+  series: [],
   fixtures: [],
-  venues: [],
-  broadcast: []
+  tournaments: [],
+  venues: []
 };
 
 function loadData() {
@@ -31,67 +48,45 @@ function loadData() {
     if (fs.existsSync(DATA_FILE)) {
       const raw = fs.readFileSync(DATA_FILE, 'utf8');
       const data = JSON.parse(raw);
-      if (!Array.isArray(data.organizations) || !data.organizations.length) {
-        data.organizations = [{ id: DEFAULT_ORG_ID, name: 'Default League', slug: 'default', plan: 'free', createdAt: new Date().toISOString() }];
+      if (!Array.isArray(data.organizations) || data.organizations.length === 0) {
+        data.organizations = JSON.parse(JSON.stringify(defaultData.organizations));
       }
-      if (!Array.isArray(data.users)) data.users = [];
-      if (!Array.isArray(data.teams)) data.teams = [];
-      if (!Array.isArray(data.players)) data.players = [];
-      if (!Array.isArray(data.auctions)) data.auctions = [];
-      if (!Array.isArray(data.bids)) data.bids = [];
-      if (!Array.isArray(data.soldPlayers)) data.soldPlayers = [];
       if (!Array.isArray(data.matches)) data.matches = [];
       if (!Array.isArray(data.payments)) data.payments = [];
-      if (!Array.isArray(data.tournaments)) data.tournaments = [];
-      if (!Array.isArray(data.fixtures)) data.fixtures = [];
-      if (!Array.isArray(data.venues)) data.venues = [];
+      if (!Array.isArray(data.auditLog)) data.auditLog = [];
       if (!Array.isArray(data.broadcast)) data.broadcast = [];
+      if (!Array.isArray(data.series)) data.series = [];
+      if (!Array.isArray(data.fixtures)) data.fixtures = [];
+      if (!Array.isArray(data.tournaments)) data.tournaments = [];
+      if (!Array.isArray(data.venues)) data.venues = [];
       const orgId = data.organizations[0]?.id || DEFAULT_ORG_ID;
-      data.users.forEach(u => { if (!u.orgId) u.orgId = orgId; });
-      db = data;
+      ['users', 'teams', 'players', 'auctions', 'bids', 'soldPlayers', 'matches'].forEach(key => {
+        if (!Array.isArray(data[key])) data[key] = [];
+        data[key].forEach(row => {
+          if (!row.orgId) row.orgId = orgId;
+        });
+      });
+      return data;
     }
-  } catch (e) {
-    console.error('Failed to load db', e);
+  } catch (err) {
+    console.error('Error loading data:', err.message);
   }
+  return JSON.parse(JSON.stringify(defaultData));
 }
 
 function saveData(data) {
   try {
     fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
-  } catch (e) {
-    console.error('Failed to save db', e);
+  } catch (err) {
+    console.error('Error saving data:', err.message);
   }
 }
 
-function persist() { saveData(db); }
+let db = loadData();
 
-loadData();
-
-(function ensureDeveloper() {
-  const exists = db.users.find(u => u.email === 'developer@auction.com');
-  if (!exists) {
-    db.users.push({
-      id: 'dev-001', name: 'Platform Developer', email: 'developer@auction.com',
-      password: 'devxai2026', role: 'developer', teamId: null, orgId: DEFAULT_ORG_ID
-    });
-    persist();
-  } else if (exists.role !== 'developer') {
-    exists.role = 'developer';
-    persist();
-  }
-  const admin = db.users.find(u => u.email === 'admin@auction.com');
-  if (!admin) {
-    db.users.push({
-      id: 'admin-001', name: 'League Admin', email: 'admin@auction.com',
-      password: 'admin123', role: 'admin', teamId: null, orgId: DEFAULT_ORG_ID
-    });
-    persist();
-  }
-  if (!Array.isArray(db.organizations) || !db.organizations.length) {
-    db.organizations = [{ id: DEFAULT_ORG_ID, name: 'Default League', slug: 'default', plan: 'free', createdAt: new Date().toISOString() }];
-    persist();
-  }
-})();
+function persist() {
+  saveData(db);
+}
 
 function byOrg(arr, orgId) {
   if (!orgId) return arr || [];
@@ -101,14 +96,17 @@ function byOrg(arr, orgId) {
 module.exports = {
   DEFAULT_ORG_ID,
   getData: () => db,
-  setData: (newData) => { db = newData; persist(); },
+  setData: (newData) => {
+    db = newData;
+    persist();
+  },
   persist,
   getUsers: (orgId) => (orgId ? byOrg(db.users, orgId) : db.users),
   getAllUsers: () => db.users,
   getTeams: (orgId) => byOrg(db.teams, orgId),
   getPlayers: (orgId) => byOrg(db.players, orgId),
   getAuctions: (orgId) => byOrg(db.auctions, orgId),
-  getBids: (orgId) => (orgId ? byOrg(db.bids, orgId) : db.bids),
+  getBids: (orgId) => byOrg(db.bids, orgId),
   getSoldPlayers: (orgId) => byOrg(db.soldPlayers, orgId),
   getMatches: (orgId) => {
     if (!Array.isArray(db.matches)) db.matches = [];
@@ -119,116 +117,214 @@ module.exports = {
     return db.organizations;
   },
   getPayments: (orgId) => byOrg(db.payments || [], orgId),
-  getTournaments: (orgId) => {
-    if (!Array.isArray(db.tournaments)) db.tournaments = [];
-    return orgId ? byOrg(db.tournaments, orgId) : db.tournaments;
-  },
-  getFixtures: (orgId) => {
-    if (!Array.isArray(db.fixtures)) db.fixtures = [];
-    return orgId ? byOrg(db.fixtures, orgId) : db.fixtures;
-  },
-  getVenues: (orgId) => {
-    if (!Array.isArray(db.venues)) db.venues = [];
-    return orgId ? byOrg(db.venues, orgId) : db.venues;
-  },
-  getBroadcast: (orgId) => {
-    if (!Array.isArray(db.broadcast)) db.broadcast = [];
-    return orgId ? byOrg(db.broadcast, orgId) : db.broadcast;
-  },
   getOrgById: (id) => (db.organizations || []).find(o => o.id === id) || null,
-  getOrgBySlug: (slug) => (db.organizations || []).find(o => o.slug === slug) || null,
+  getOrgBySlug: (slug) =>
+    (db.organizations || []).find(o => o.slug === String(slug).toLowerCase()) || null,
+
   addUser: (user) => {
     user.id = user.id || uuidv4();
     if (!user.orgId) user.orgId = DEFAULT_ORG_ID;
-    db.users.push(user); persist(); return user;
+    db.users.push(user);
+    persist();
+    return user;
   },
   updateUser: (id, updates) => {
     const idx = db.users.findIndex(u => u.id === id);
     if (idx === -1) return null;
-    db.users[idx] = { ...db.users[idx], ...updates }; persist(); return db.users[idx];
+    db.users[idx] = { ...db.users[idx], ...updates };
+    persist();
+    return db.users[idx];
   },
   addTeam: (team) => {
     team.id = team.id || uuidv4();
     if (!team.orgId) team.orgId = DEFAULT_ORG_ID;
-    db.teams.push(team); persist(); return team;
+    db.teams.push(team);
+    persist();
+    return team;
   },
   updateTeam: (id, updates) => {
     const idx = db.teams.findIndex(t => t.id === id);
     if (idx === -1) return null;
-    db.teams[idx] = { ...db.teams[idx], ...updates }; persist(); return db.teams[idx];
+    db.teams[idx] = { ...db.teams[idx], ...updates };
+    persist();
+    return db.teams[idx];
   },
   addPlayer: (player) => {
     player.id = player.id || uuidv4();
     if (!player.orgId) player.orgId = DEFAULT_ORG_ID;
-    db.players.push(player); persist(); return player;
+    db.players.push(player);
+    persist();
+    return player;
   },
   updatePlayer: (id, updates) => {
     const idx = db.players.findIndex(p => p.id === id);
     if (idx === -1) return null;
-    db.players[idx] = { ...db.players[idx], ...updates }; persist(); return db.players[idx];
+    db.players[idx] = { ...db.players[idx], ...updates };
+    persist();
+    return db.players[idx];
   },
   addAuction: (auction) => {
     auction.id = auction.id || uuidv4();
     if (!auction.orgId) auction.orgId = DEFAULT_ORG_ID;
-    db.auctions.push(auction); persist(); return auction;
+    db.auctions.push(auction);
+    persist();
+    return auction;
   },
   updateAuction: (id, updates) => {
     const idx = db.auctions.findIndex(a => a.id === id);
     if (idx === -1) return null;
-    db.auctions[idx] = { ...db.auctions[idx], ...updates }; persist(); return db.auctions[idx];
+    db.auctions[idx] = { ...db.auctions[idx], ...updates };
+    persist();
+    return db.auctions[idx];
   },
   addBid: (bid) => {
     bid.id = bid.id || uuidv4();
     if (!bid.orgId) bid.orgId = DEFAULT_ORG_ID;
-    db.bids.push(bid); persist(); return bid;
+    db.bids.push(bid);
+    persist();
+    return bid;
   },
   removeBid: (id) => {
-    const idx = db.bids.findIndex(x => x.id === id);
+    const idx = db.bids.findIndex(b => b.id === id);
     if (idx === -1) return false;
-    db.bids.splice(idx, 1); persist(); return true;
+    db.bids.splice(idx, 1);
+    persist();
+    return true;
   },
   addSoldPlayer: (row) => {
     row.id = row.id || uuidv4();
     if (!row.orgId) row.orgId = DEFAULT_ORG_ID;
-    db.soldPlayers.push(row); persist(); return row;
+    if (!Array.isArray(db.soldPlayers)) db.soldPlayers = [];
+    db.soldPlayers.push(row);
+    persist();
+    return row;
   },
   addMatch: (match) => {
+    if (!Array.isArray(db.matches)) db.matches = [];
     match.id = match.id || uuidv4();
     if (!match.orgId) match.orgId = DEFAULT_ORG_ID;
-    if (!Array.isArray(db.matches)) db.matches = [];
-    db.matches.push(match); persist(); return match;
+    db.matches.push(match);
+    persist();
+    return match;
   },
   updateMatch: (id, updates) => {
     if (!Array.isArray(db.matches)) db.matches = [];
     const idx = db.matches.findIndex(m => m.id === id);
     if (idx === -1) return null;
-    db.matches[idx] = { ...db.matches[idx], ...updates }; persist(); return db.matches[idx];
+    db.matches[idx] = { ...db.matches[idx], ...updates };
+    persist();
+    return db.matches[idx];
   },
   addOrganization: (org) => {
+    if (!Array.isArray(db.organizations)) db.organizations = [];
     org.id = org.id || uuidv4();
-    db.organizations.push(org); persist(); return org;
+    db.organizations.push(org);
+    persist();
+    return org;
   },
   updateOrganization: (id, updates) => {
-    const idx = db.organizations.findIndex(o => o.id === id);
+    const idx = (db.organizations || []).findIndex(o => o.id === id);
     if (idx === -1) return null;
-    db.organizations[idx] = { ...db.organizations[idx], ...updates }; persist(); return db.organizations[idx];
+    db.organizations[idx] = { ...db.organizations[idx], ...updates };
+    persist();
+    return db.organizations[idx];
   },
   addPayment: (payment) => {
     if (!Array.isArray(db.payments)) db.payments = [];
     payment.id = payment.id || uuidv4();
-    if (!payment.orgId) payment.orgId = DEFAULT_ORG_ID;
-    db.payments.push(payment); persist(); return payment;
+    db.payments.push(payment);
+    persist();
+    return payment;
   },
   updatePayment: (id, updates) => {
     if (!Array.isArray(db.payments)) db.payments = [];
-    const idx = db.payments.findIndex(x => x.id === id);
+    const idx = db.payments.findIndex(p => p.id === id);
     if (idx === -1) return null;
-    db.payments[idx] = { ...db.payments[idx], ...updates }; persist(); return db.payments[idx];
+    db.payments[idx] = { ...db.payments[idx], ...updates };
+    persist();
+    return db.payments[idx];
   },
-  addTournament: (row) => {
+
+  getAuditLog: (orgId) => {
+    if (!Array.isArray(db.auditLog)) db.auditLog = [];
+    return orgId ? byOrg(db.auditLog, orgId) : db.auditLog;
+  },
+  addAuditLog: (entry) => {
+    if (!Array.isArray(db.auditLog)) db.auditLog = [];
+    const row = {
+      id: entry.id || uuidv4(),
+      at: entry.at || new Date().toISOString(),
+      orgId: entry.orgId || DEFAULT_ORG_ID,
+      action: entry.action || 'unknown',
+      by: entry.by || null,
+      detail: entry.detail || null,
+      meta: entry.meta || null
+    };
+    db.auditLog.push(row);
+    if (db.auditLog.length > 500) db.auditLog = db.auditLog.slice(-500);
+    persist();
+    return row;
+  },
+  getBroadcast: (orgId) => {
+    if (!Array.isArray(db.broadcast)) db.broadcast = [];
+    if (!orgId) return db.broadcast;
+    return db.broadcast.filter(b => b.orgId === orgId);
+  },
+  upsertBroadcast: (orgId, data) => {
+    if (!Array.isArray(db.broadcast)) db.broadcast = [];
+    const idx = db.broadcast.findIndex(b => b.orgId === orgId);
+    const row = { ...(idx >= 0 ? db.broadcast[idx] : {}), ...data, orgId, updatedAt: new Date().toISOString() };
+    if (idx >= 0) db.broadcast[idx] = row;
+    else db.broadcast.push(row);
+    persist();
+    return row;
+  },
+  getSeries: (orgId) => {
+    if (!Array.isArray(db.series)) db.series = [];
+    return orgId ? byOrg(db.series, orgId) : db.series;
+  },
+  addSeries: (row) => {
+    if (!Array.isArray(db.series)) db.series = [];
     row.id = row.id || uuidv4();
     if (!row.orgId) row.orgId = DEFAULT_ORG_ID;
+    db.series.push(row);
+    persist();
+    return row;
+  },
+  updateSeries: (id, updates) => {
+    if (!Array.isArray(db.series)) db.series = [];
+    const idx = db.series.findIndex(s => s.id === id);
+    if (idx < 0) return null;
+    db.series[idx] = { ...db.series[idx], ...updates };
+    persist();
+    return db.series[idx];
+  },
+  getFixtures: (orgId) => {
+    if (!Array.isArray(db.fixtures)) db.fixtures = [];
+    return orgId ? byOrg(db.fixtures, orgId) : db.fixtures;
+  },
+  setFixtures: (orgId, list) => {
+    if (!Array.isArray(db.fixtures)) db.fixtures = [];
+    db.fixtures = db.fixtures.filter(f => f.orgId !== orgId);
+    (list || []).forEach(f => {
+      db.fixtures.push({ ...f, id: f.id || uuidv4(), orgId: orgId || DEFAULT_ORG_ID });
+    });
+    persist();
+    return db.fixtures.filter(f => f.orgId === orgId);
+  },
+
+  getTournaments: (orgId) => {
     if (!Array.isArray(db.tournaments)) db.tournaments = [];
+    return orgId ? byOrg(db.tournaments, orgId) : db.tournaments;
+  },
+  getVenues: (orgId) => {
+    if (!Array.isArray(db.venues)) db.venues = [];
+    return orgId ? byOrg(db.venues, orgId) : db.venues;
+  },
+  addTournament: (row) => {
+    if (!Array.isArray(db.tournaments)) db.tournaments = [];
+    row.id = row.id || uuidv4();
+    if (!row.orgId) row.orgId = DEFAULT_ORG_ID;
     db.tournaments.push(row); persist(); return row;
   },
   updateTournament: (id, updates) => {
@@ -238,9 +334,9 @@ module.exports = {
     db.tournaments[idx] = { ...db.tournaments[idx], ...updates }; persist(); return db.tournaments[idx];
   },
   addFixture: (row) => {
+    if (!Array.isArray(db.fixtures)) db.fixtures = [];
     row.id = row.id || uuidv4();
     if (!row.orgId) row.orgId = DEFAULT_ORG_ID;
-    if (!Array.isArray(db.fixtures)) db.fixtures = [];
     db.fixtures.push(row); persist(); return row;
   },
   updateFixture: (id, updates) => {
@@ -256,9 +352,9 @@ module.exports = {
     db.fixtures.splice(idx, 1); persist(); return true;
   },
   addVenue: (row) => {
+    if (!Array.isArray(db.venues)) db.venues = [];
     row.id = row.id || uuidv4();
     if (!row.orgId) row.orgId = DEFAULT_ORG_ID;
-    if (!Array.isArray(db.venues)) db.venues = [];
     db.venues.push(row); persist(); return row;
   },
   updateVenue: (id, updates) => {
@@ -273,13 +369,42 @@ module.exports = {
     if (idx === -1) return false;
     db.venues.splice(idx, 1); persist(); return true;
   },
-  upsertBroadcast: (orgId, data) => {
-    if (!Array.isArray(db.broadcast)) db.broadcast = [];
-    const idx = db.broadcast.findIndex(x => x.orgId === orgId);
-    const row = { id: idx >= 0 ? db.broadcast[idx].id : uuidv4(), orgId, ...data, updatedAt: new Date().toISOString() };
-    if (idx >= 0) db.broadcast[idx] = { ...db.broadcast[idx], ...row };
-    else db.broadcast.push(row);
-    persist();
-    return idx >= 0 ? db.broadcast[idx] : row;
+
+  purgeExpiredPhotos: (retentionDays = 15) => {
+    const cutoffMs = retentionDays * 24 * 60 * 60 * 1000;
+    const now = Date.now();
+    let cleared = 0;
+    const orgLastEnd = {};
+
+    (db.auctions || []).forEach(a => {
+      if (a.status === 'completed' && a.completedAt) {
+        const t = new Date(a.completedAt).getTime();
+        if (!orgLastEnd[a.orgId] || t > orgLastEnd[a.orgId]) orgLastEnd[a.orgId] = t;
+      }
+    });
+    (db.matches || []).forEach(m => {
+      if (m.status === 'completed') {
+        const t = new Date(m.updatedAt || m.createdAt).getTime();
+        if (!orgLastEnd[m.orgId] || t > orgLastEnd[m.orgId]) orgLastEnd[m.orgId] = t;
+      }
+    });
+
+    (db.players || []).forEach(p => {
+      const end = orgLastEnd[p.orgId];
+      if (end && now - end > cutoffMs && p.photoUrl) {
+        p.photoUrl = null;
+        cleared++;
+      }
+    });
+    (db.teams || []).forEach(t => {
+      const end = orgLastEnd[t.orgId];
+      if (end && now - end > cutoffMs && t.logoUrl) {
+        t.logoUrl = null;
+        cleared++;
+      }
+    });
+
+    if (cleared > 0) persist();
+    return cleared;
   }
 };
