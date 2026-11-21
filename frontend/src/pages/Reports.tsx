@@ -33,11 +33,14 @@ interface SoldRecord {
 
 export default function Reports() {
   const { user } = useAuth();
+  const isAdmin = user?.role === 'admin' || user?.role === 'developer';
   const [teams, setTeams] = useState<Team[]>([]);
   const [sold, setSold] = useState<SoldRecord[]>([]);
   const [players, setPlayers] = useState<Player[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'summary' | 'sold' | 'squads' | 'unsold'>('summary');
+  const [activeTab, setActiveTab] = useState<'summary' | 'sold' | 'squads' | 'unsold' | 'session' | 'owner'>('summary');
+  const [sessionReport, setSessionReport] = useState<any>(null);
+  const [auctionId, setAuctionId] = useState<string | null>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -47,16 +50,21 @@ export default function Reports() {
           api.get('/players'),
           api.get('/auctions')
         ]);
-        setTeams(teamsRes.data);
-        setPlayers(playersRes.data);
-        const auctions = auctionsRes.data;
+        setTeams(teamsRes.data || []);
+        setPlayers(playersRes.data || []);
+        const auctions = auctionsRes.data || [];
         if (auctions.length > 0) {
           const target =
             auctions.find((a: any) => a.status === 'live' || a.status === 'paused') ||
             auctions.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
           if (target) {
+            setAuctionId(target.id);
             const soldRes = await api.get(`/auctions/${target.id}/sold`);
-            setSold(soldRes.data);
+            setSold(soldRes.data || []);
+            try {
+              const rep = await api.get(`/auctions/${target.id}/report`);
+              setSessionReport(rep.data);
+            } catch { /* report optional */ }
           }
         }
       } catch (err) {
@@ -70,7 +78,7 @@ export default function Reports() {
 
   const totalSpent = sold.reduce((sum, s) => sum + (s.soldPrice || 0), 0);
   const soldCount = sold.length;
-  const unsoldPlayers = players.filter(p => p.status === 'Unsold');
+  const unsoldPlayers = players.filter(p => p.status === 'Unsold' || (p as any).auctionStatus === 'Unsold');
   const approvedLeft = players.filter(p => p.status === 'Approved');
 
   const squads = teams.map(team => {
@@ -117,6 +125,67 @@ export default function Reports() {
     exportCSV([headers, ...rows], 'team-squads.csv');
   };
 
+  const exportSessionReport = () => {
+    if (!sessionReport) return;
+    const rows: string[][] = [
+      ['Summary', 'Auction', sessionReport.auction?.name || ''],
+      ['Summary', 'Status', sessionReport.auction?.status || ''],
+      ['Summary', 'Sold', String(sessionReport.summary?.soldCount ?? '')],
+      ['Summary', 'Unsold', String(sessionReport.summary?.unsoldCount ?? '')],
+      ['Summary', 'Total spend', String(sessionReport.summary?.totalSpend ?? '')],
+      ['Summary', 'Avg price', String(sessionReport.summary?.avgPrice ?? '')],
+      ['Summary', 'Median', String(sessionReport.summary?.medianPrice ?? '')],
+      [],
+      ['Sold', 'Player', 'Role', 'Team', 'Price', 'At'],
+      ...(sessionReport.sold || []).map((s: any) => [
+        'Sold', s.playerName || '', s.role || '', s.teamName || '', String(s.soldPrice || 0), s.soldAt || ''
+      ]),
+      [],
+      ['Team spend', 'Team', 'Players', 'Spent', 'Remaining'],
+      ...(sessionReport.teamSpend || []).map((t: any) => [
+        'Team', t.teamName || '', String(t.players ?? ''), String(t.spent ?? ''), String(t.remaining ?? '')
+      ]),
+      [],
+      ['Role averages', 'Role', 'Count', 'Total', 'Avg'],
+      ...(sessionReport.roleAverages || []).map((x: any) => [
+        'Role', x.role || '', String(x.count ?? ''), String(x.total ?? ''), String(x.avg ?? '')
+      ]),
+      [],
+      ['Unsold', 'Name', 'Role', 'Base'],
+      ...(sessionReport.unsold || []).map((u: any) => [
+        'Unsold', u.name || '', u.role || '', String(u.basePrice ?? '')
+      ]),
+      [],
+      ['Purse audit', 'At', 'Type', 'Team', 'Player', 'Amount', 'Before', 'After', 'By'],
+      ...((sessionReport.purseLog || sessionReport.auction?.purseLog || []) as any[]).map((p: any) => [
+        'Purse', p.at || '', p.type || '', p.teamName || '', p.playerName || '',
+        String(p.amount ?? ''), String(p.remainingPurseBefore ?? ''), String(p.remainingPurseAfter ?? ''), p.by || ''
+      ])
+    ];
+    exportCSV(rows, `auction-session-report-${sessionReport.auction?.id || 'export'}.csv`);
+  };
+
+  const exportOwnerPack = (teamId: string) => {
+    const team = teams.find(t => t.id === teamId);
+    if (!team) return;
+    const buys = sold.filter(s => s.teamId === teamId);
+    const rows: string[][] = [
+      ['Team', team.name],
+      ['Purse', String(team.purse)],
+      ['Remaining', String(team.remainingPurse)],
+      ['Players', String(buys.length)],
+      [],
+      ['Player', 'Role', 'Price', 'Sold At'],
+      ...buys.map(s => [
+        s.player?.name || '',
+        s.player?.role || '',
+        String(s.soldPrice),
+        s.soldAt ? new Date(s.soldAt).toLocaleString() : ''
+      ])
+    ];
+    exportCSV(rows, `owner-pack-${team.name.replace(/\s+/g, '-')}.csv`);
+  };
+
   if (loading) {
     return (
       <AppShell title="Reports">
@@ -129,7 +198,9 @@ export default function Reports() {
     { key: 'summary' as const, label: 'Summary' },
     { key: 'sold' as const, label: `Sold (${soldCount})` },
     { key: 'squads' as const, label: 'Team Squads' },
-    { key: 'unsold' as const, label: `Unsold (${unsoldPlayers.length})` }
+    { key: 'unsold' as const, label: `Unsold (${unsoldPlayers.length})` },
+    { key: 'session' as const, label: 'Session report' },
+    { key: 'owner' as const, label: 'Owner packs' }
   ];
 
   return (
@@ -320,6 +391,120 @@ export default function Reports() {
               </tbody>
             </table>
           )}
+        </div>
+      )}
+
+      {activeTab === 'session' && (
+        <div className="space-y-4">
+          <div className="flex flex-wrap justify-between items-center gap-2">
+            <div className="text-[14px]" style={{ color: 'var(--text-2)' }}>
+              {sessionReport?.auction && (
+                <>
+                  {sessionReport.auction.name} · {sessionReport.auction.status}
+                  {sessionReport.auction.pauseReason ? ` · paused: ${sessionReport.auction.pauseReason}` : ''}
+                </>
+              )}
+            </div>
+            <button type="button" className="as-btn-primary text-sm" onClick={exportSessionReport} disabled={!sessionReport}>
+              Export session CSV
+            </button>
+          </div>
+          {!sessionReport && (
+            <div className="glass p-8 text-center text-[14px]" style={{ color: 'var(--text-2)' }}>
+              No session report yet. Sell some players, then refresh.
+            </div>
+          )}
+          {sessionReport && (
+            <>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {[
+                  { l: 'Sold', v: String(sessionReport.summary?.soldCount ?? 0) },
+                  { l: 'Unsold', v: String(sessionReport.summary?.unsoldCount ?? 0) },
+                  { l: 'Total spend', v: `₹${Number(sessionReport.summary?.totalSpend || 0).toLocaleString('en-IN')}` },
+                  { l: 'Avg / median', v: `₹${Number(sessionReport.summary?.avgPrice || 0).toLocaleString('en-IN')} / ₹${Number(sessionReport.summary?.medianPrice || 0).toLocaleString('en-IN')}` }
+                ].map(c => (
+                  <div key={c.l} className="glass p-4 text-center">
+                    <div className="text-[20px] font-semibold">{c.v}</div>
+                    <div className="text-[12px] mt-1" style={{ color: 'var(--text-2)' }}>{c.l}</div>
+                  </div>
+                ))}
+              </div>
+              <div className="glass overflow-hidden">
+                <div className="px-4 pt-3 pb-2 font-semibold">Team spend</div>
+                <table>
+                  <thead><tr><th>Team</th><th>Players</th><th>Spent</th><th>Left</th></tr></thead>
+                  <tbody>
+                    {(sessionReport.teamSpend || []).map((t: any) => (
+                      <tr key={t.teamId}>
+                        <td className="font-medium">{t.teamName}</td>
+                        <td>{t.players}</td>
+                        <td style={{ color: '#ff3b30' }}>₹{Number(t.spent || 0).toLocaleString()}</td>
+                        <td style={{ color: '#30d158' }}>₹{Number(t.remaining || 0).toLocaleString()}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="glass overflow-hidden">
+                <div className="px-4 pt-3 pb-2 font-semibold">Role averages</div>
+                <table>
+                  <thead><tr><th>Role</th><th>Count</th><th>Total</th><th>Avg</th></tr></thead>
+                  <tbody>
+                    {(sessionReport.roleAverages || []).map((x: any) => (
+                      <tr key={x.role}>
+                        <td>{x.role}</td>
+                        <td>{x.count}</td>
+                        <td>₹{Number(x.total || 0).toLocaleString()}</td>
+                        <td>₹{Number(x.avg || 0).toLocaleString()}</td>
+                      </tr>
+                    ))}
+                    {(sessionReport.roleAverages || []).length === 0 && (
+                      <tr><td colSpan={4} style={{ color: 'var(--text-2)' }}>No data</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              {((sessionReport.purseLog || sessionReport.auction?.purseLog || []) as any[]).length > 0 && (
+                <div className="glass p-4">
+                  <div className="font-semibold mb-2">Purse audit</div>
+                  <div className="space-y-1 text-[13px] max-h-64 overflow-y-auto">
+                    {((sessionReport.purseLog || sessionReport.auction?.purseLog || []) as any[]).slice().reverse().map((p: any, i: number) => (
+                      <div key={i} style={{ color: 'var(--text-2)' }}>
+                        {p.at ? new Date(p.at).toLocaleString() : '—'} · <b style={{ color: 'var(--text)' }}>{p.type}</b>
+                        {p.teamName ? ` · ${p.teamName}` : ''}{p.playerName ? ` · ${p.playerName}` : ''}
+                        {p.amount != null ? ` · ₹${Number(p.amount).toLocaleString()}` : ''}
+                        {p.by ? ` · by ${p.by}` : ''}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {activeTab === 'owner' && (
+        <div className="space-y-3">
+          <p className="text-[14px]" style={{ color: 'var(--text-2)' }}>
+            One-pager export per franchise: buys + spend. Handy for team owners after the auction.
+          </p>
+          {squads.map(sq => (
+            <div key={sq.team.id} className="glass p-4 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                {sq.team.logoUrl && <img src={sq.team.logoUrl} alt="" className="w-8 h-8 rounded-full object-cover" />}
+                <div>
+                  <div className="font-semibold">{sq.team.name}</div>
+                  <div className="text-[13px]" style={{ color: 'var(--text-2)' }}>
+                    {sq.count} players · ₹{sq.spent.toLocaleString()} spent · ₹{sq.team.remainingPurse.toLocaleString()} left
+                  </div>
+                </div>
+              </div>
+              <button type="button" className="as-btn-ghost text-sm" onClick={() => exportOwnerPack(sq.team.id)}>
+                Export owner pack CSV
+              </button>
+            </div>
+          ))}
         </div>
       )}
     </AppShell>
