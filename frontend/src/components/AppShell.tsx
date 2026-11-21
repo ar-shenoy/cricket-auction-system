@@ -1,61 +1,57 @@
-import React, { useEffect, useState } from 'react';
+import React, { ReactNode, useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import api from '../services/api';
 import ThemeToggle from './ThemeToggle';
+import api from '../services/api';
 
-const ALL_NAV: { to: string; label: string; feature: string | null; developerOnly?: boolean }[] = [
+const ALL_NAV = [
   { to: '/', label: 'Home', feature: null },
-  { to: '/players', label: 'Players', feature: 'players' },
+  { to: '/players', label: 'Players', feature: 'players', adminOnly: true },
   { to: '/teams', label: 'Teams', feature: 'teams' },
   { to: '/auction', label: 'Auction', feature: 'auction' },
-  { to: '/scoring', label: 'Scoring', feature: 'scoring' },
-  { to: '/hub', label: 'Hub', feature: 'tournamentHub' },
-  { to: '/franchise', label: 'Franchise', feature: 'franchisePortal' },
-  { to: '/broadcast', label: 'Broadcast', feature: 'broadcastPack' },
-  { to: '/intelligence', label: 'Intel', feature: 'intelligence' },
-  { to: '/reports', label: 'Reports', feature: 'reports' },
-  { to: '/billing', label: 'Billing', feature: 'billing' },
-  { to: '/features', label: 'Features', feature: null, developerOnly: true }
+  { to: '/scoring', label: 'Scoring', feature: 'scoring', adminOnly: true },
+  { to: '/reports', label: 'Reports', feature: 'reports', adminOnly: true },
+  { to: '/intelligence', label: 'Intel', feature: null, adminOnly: true },
+  { to: '/audit', label: 'Audit', feature: null, adminOnly: true },
+  { to: '/health', label: 'Health', feature: null, adminOnly: true },
+  { to: '/billing', label: 'Billing', feature: 'billing', adminOnly: true },
+  { to: '/features', label: 'Features', feature: null, adminOnly: true }
 ];
 
 export default function AppShell({
+  children,
   title,
   subtitle,
-  actions,
-  children
+  actions
 }: {
+  children: ReactNode;
   title?: string;
   subtitle?: string;
-  actions?: React.ReactNode;
-  children: React.ReactNode;
+  actions?: ReactNode;
 }) {
   const { user, logout } = useAuth();
   const loc = useLocation();
   const [features, setFeatures] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
-    api.get('/orgs/features').then(r => setFeatures(r.data.features || {})).catch(() => {});
-  }, []);
+    api.get('/orgs/features')
+      .then(r => setFeatures(r.data.features || {}))
+      .catch(() => {});
+  }, [loc.pathname]);
 
-  const on = (key: string | null) => {
-    if (!key) return true;
-    return features[key] !== false;
-  };
-
+  const isStaff = user?.role === 'admin' || user?.role === 'developer';
   const nav = ALL_NAV.filter(item => {
-    if (item.developerOnly && user?.role !== 'developer') return false;
-    return on(item.feature);
+    if ((item as any).adminOnly && !isStaff) return false;
+    if (!item.feature) return true;
+    if (features[item.feature] === false) return false;
+    return true;
   });
 
   const topLinks = [
-    { to: '/live', label: 'Live', feature: 'publicLive' },
-    { to: '/results', label: 'Results', feature: 'publicResults' },
+    { to: '/live', label: 'Live', feature: 'auction' },
     { href: '/scoreboard', label: 'Board', feature: 'scoreboard' },
-    { to: '/points', label: 'Points', feature: 'publicPoints' },
-    { href: '/match-live', label: 'Match centre', feature: 'publicMatchCentre' },
-    { href: '/tournament', label: 'Tournament', feature: 'publicTournament' }
-  ].filter(item => on(item.feature));
+    { to: '/points', label: 'Points', feature: 'points' }
+  ].filter(item => features[item.feature as string] !== false);
 
   return (
     <div className="page-mesh" style={{ color: 'var(--text)' }}>
@@ -63,11 +59,11 @@ export default function AppShell({
         <div className="max-w-6xl mx-auto px-4 sm:px-5 py-2.5 flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-3 min-w-0">
             <Link to="/" className="flex items-center gap-2 font-semibold text-[17px] tracking-tight shrink-0" style={{ color: 'var(--text)' }}>
-              <span className="text-[20px] leading-none">🏏</span>
+              <span className="text-[20px]">🏏</span>
               <span className="hidden sm:inline">AuctionScore</span>
             </Link>
             {title && (
-              <div className="hidden md:block pl-3 min-w-0" style={{ borderLeft: '0.5px solid var(--separator)' }}>
+              <div className="min-w-0 border-l pl-3" style={{ borderColor: 'var(--border)' }}>
                 <div className="font-semibold text-[15px] truncate" style={{ color: 'var(--text)' }}>{title}</div>
                 {subtitle && (
                   <div className="text-[12px] truncate" style={{ color: 'var(--text-2)' }}>{subtitle}</div>
@@ -78,23 +74,11 @@ export default function AppShell({
           <div className="flex items-center gap-1 flex-wrap justify-end">
             {topLinks.map(item =>
               (item as any).href ? (
-                <a
-                  key={item.label}
-                  href={(item as any).href}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-[13px] px-2.5 py-1 rounded-full transition"
-                  style={{ color: 'var(--text-2)' }}
-                >
+                <a key={item.label} href={(item as any).href} target="_blank" rel="noreferrer" className="text-[13px] px-2.5 py-1 rounded-full transition" style={{ color: 'var(--text-2)' }}>
                   {item.label}
                 </a>
               ) : (
-                <Link
-                  key={item.label}
-                  to={item.to!}
-                  className="text-[13px] px-2.5 py-1 rounded-full transition"
-                  style={{ color: 'var(--text-2)' }}
-                >
+                <Link key={item.label} to={item.to!} className="text-[13px] px-2.5 py-1 rounded-full transition" style={{ color: 'var(--text-2)' }}>
                   {item.label}
                 </Link>
               )
