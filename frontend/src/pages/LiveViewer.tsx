@@ -11,6 +11,13 @@ interface SoldRow { id: string; soldPrice: number; soldAt?: string; player?: Pla
 interface BidRow { id: string; amount: number; teamId: string; teamName?: string; playerId?: string; createdAt?: string | null; }
 
 export default function LiveViewer() {
+  const embedMode = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('embed') === '1';
+  React.useEffect(() => {
+    if (!embedMode) return;
+    document.body.classList.add('as-embed');
+    return () => document.body.classList.remove('as-embed');
+  }, [embedMode]);
+
   const [auction, setAuction] = useState<any>(null);
   const [current, setCurrent] = useState<Player | null>(null);
   const [soldList, setSoldList] = useState<SoldRow[]>([]);
@@ -51,10 +58,8 @@ export default function LiveViewer() {
         try {
           const pr = await publicApi.get(`/players/public/${a.currentPlayerId}`);
           setCurrent(pr.data);
-        } catch { /* keep previous if any */ }
+        } catch { /* keep previous */ }
       }
-      // Do NOT clear current when currentPlayerId is null — keep card until next player-selected
-
       if (a?.id) {
         await loadSold(a.id);
         await loadBids(a.id);
@@ -129,7 +134,6 @@ export default function LiveViewer() {
           teamName: r.team?.name || '—',
           price: r.price ?? r.sold?.soldPrice ?? 0
         });
-        // Keep player card on screen until next player-selected
         if (r.player) setCurrent(r.player);
       }
       if (data.auction?.id) {
@@ -148,7 +152,6 @@ export default function LiveViewer() {
     };
   }, [auction?.id]);
 
-  // Soft poll — only switch player when server has a NEW currentPlayerId; never clear after sold
   useEffect(() => {
     if (!auction?.id) return;
     const id = window.setInterval(async () => {
@@ -185,19 +188,26 @@ export default function LiveViewer() {
 
   return (
     <div className="min-h-screen pb-10" style={{ background: 'var(--bg)', color: 'var(--text-primary)' }}>
-      <header className="glass-nav sticky top-0 z-40">
-        <div className="max-w-lg mx-auto px-4 py-3 flex items-center justify-between">
-          <div>
-            <div className="text-[15px] font-semibold">{auction?.name || 'Live Auction'}</div>
-            <div className="text-xs text-[var(--text-secondary)] capitalize">{auction?.status || 'idle'} · Public View</div>
+      {!embedMode && (
+        <header className="glass-nav sticky top-0 z-40">
+          <div className="max-w-lg mx-auto px-4 py-3 flex items-center justify-between">
+            <div>
+              <div className="text-[15px] font-semibold">{auction?.name || 'Live Auction'}</div>
+              <div className="text-xs text-[var(--text-secondary)] capitalize">{auction?.status || 'idle'} · Public View</div>
+            </div>
+            <div className="flex items-center gap-3">
+              <Link to="/results" className="text-[13px]" style={{ color: 'var(--accent)' }}>View report</Link>
+              <ThemeToggle />
+            </div>
           </div>
-          <div className="flex items-center gap-3">
-            <Link to="/results" className="text-[13px]" style={{ color: 'var(--accent)' }}>View report</Link>
-            <Link to="/results" className="text-[13px] text-[var(--text-secondary)]">Squads & results</Link>
-            <ThemeToggle />
-          </div>
+        </header>
+      )}
+      {embedMode && (
+        <div className="px-4 pt-3 text-center">
+          <h1 className="text-lg font-semibold">{auction?.name || 'Live Auction'}</h1>
+          <div className="text-xs text-[var(--text-secondary)] capitalize">{auction?.status || 'idle'}</div>
         </div>
-      </header>
+      )}
 
       <main className="max-w-lg mx-auto p-4 space-y-4">
         {current && (
