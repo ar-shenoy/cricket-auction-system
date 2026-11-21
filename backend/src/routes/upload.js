@@ -4,6 +4,7 @@ const path = require('path');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const { authMiddleware, requireRole } = require('../middleware/auth');
+const { getPlayers, updatePlayer } = require('../data/store');
 
 const router = express.Router();
 
@@ -12,10 +13,9 @@ if (!fs.existsSync(photosDir)) {
   fs.mkdirSync(photosDir, { recursive: true });
 }
 
-// Memory storage so we can either return a data-URL (persists in JSON) or write to disk
 const memoryUpload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 1.5 * 1024 * 1024 }, // 1.5 MB
+  limits: { fileSize: 1.5 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     const ok = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif'].includes(file.mimetype);
     if (ok) cb(null, true);
@@ -23,17 +23,6 @@ const memoryUpload = multer({
   }
 });
 
-/**
- * POST /api/upload/image
- * Admin only. Multipart field name: "file"
- *
- * Strategy (lightweight + free-tier friendly):
- * - Files <= 400 KB -> store as data URL (survives Render restarts, lives in JSON)
- * - Larger files -> save under /uploads/photos and return a public URL
- *   (works until the free-tier disk is wiped on redeploy)
- *
- * Returns: { url: string, storage: 'data'|'disk', size: number }
- */
 router.post('/image', authMiddleware, requireRole('admin'), (req, res) => {
   memoryUpload.single('file')(req, res, (err) => {
     if (err) {
@@ -45,7 +34,7 @@ router.post('/image', authMiddleware, requireRole('admin'), (req, res) => {
 
     try {
       const { buffer, mimetype, size, originalname } = req.file;
-      const DATA_URL_LIMIT = 400 * 1024; // 400 KB
+      const DATA_URL_LIMIT = 400 * 1024;
 
       if (size <= DATA_URL_LIMIT) {
         const b64 = buffer.toString('base64');
@@ -54,11 +43,10 @@ router.post('/image', authMiddleware, requireRole('admin'), (req, res) => {
           url,
           storage: 'data',
           size,
-          message: 'Stored in system (data URL - survives restarts)'
+          message: 'Stored in system (data URL – survives restarts)'
         });
       }
 
-      // Disk path for larger images
       const ext = (path.extname(originalname) || '.jpg').toLowerCase().replace(/[^.a-z0-9]/g, '') || '.jpg';
       const filename = `${uuidv4()}${ext}`;
       const filepath = path.join(photosDir, filename);
@@ -74,12 +62,49 @@ router.post('/image', authMiddleware, requireRole('admin'), (req, res) => {
         url,
         storage: 'disk',
         size,
-        message: 'Saved on server disk. On free-tier hosts this may be lost after redeploy - prefer URL or smaller images.'
+        message: 'Saved on server disk. On free-tier hosts this may be lost after redeploy – prefer URL or smaller images.'
       });
     } catch (e) {
       console.error('Upload error:', e);
       return res.status(500).json({ error: 'Failed to process image' });
     }
+  });
+});
+
+router.post('/bulk-photos', authMiddleware, requireRole('admin'), (req, res) => {
+  memoryUpload.array('files', 80)(req, res, (err) => {
+    if (err) return res.status(400).json({ error: err.message || 'Upload failed' });
+    const files = req.files || [];
+    if (!files.length) return res.status(400).json({ error: 'No files' });
+    const players = getPlayers();
+    const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+    let matched = 0;
+    const results = [];
+    for (const file of files) {
+      const base = path.basename(file.originalname, path.extname(file.originalname));
+      const key = norm(base);
+      let player = players.find(p => p.id === base || norm(p.name) === key);
+      if (!player) {
+        player = players.find(p => norm(p.name).includes(key) || key.includes(norm(p.name)));
+      }
+      if (!player) {
+        results.push({ file: file.originalname, status: 'unmatched' });
+        continue;
+      }
+      let url;
+      if (file.size <= 400 * 1024) {
+        const b64 = file.buffer.toString('base64');
+        url = `data:${file.mimetype};base64,${b64}`;
+      } else {
+        const name = `${player.id}-${Date.now()}${path.extname(file.originalname) || '.jpg'}`;
+        fs.writeFileSync(path.join(photosDir, name), file.buffer);
+        url = `/uploads/photos/${name}`;
+      }
+      updatePlayer(player.id, { photoUrl: url });
+      matched++;
+      results.push({ file: file.originalname, status: 'matched', playerId: player.id, playerName: player.name });
+    }
+    res.json({ matched, total: files.length, results });
   });
 });
 
