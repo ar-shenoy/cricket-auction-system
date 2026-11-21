@@ -26,18 +26,32 @@ if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
+function normalizeTags(raw) {
+  if (Array.isArray(raw)) return raw.map(t => String(t).trim()).filter(Boolean).slice(0, 20);
+  if (typeof raw === 'string') {
+    return raw.split(/[,;|]/).map(t => t.trim()).filter(Boolean).slice(0, 20);
+  }
+  return [];
+}
+
 router.get('/', authMiddleware, (req, res) => {
-  const { status, role, search } = req.query;
+  const { status, role, search, tag } = req.query;
   let players = getPlayers();
 
   if (status) players = players.filter(p => p.status === status);
   if (role) players = players.filter(p => p.role === role);
+  if (tag) {
+    const t = String(tag).toLowerCase();
+    players = players.filter(p => Array.isArray(p.tags) && p.tags.some(x => String(x).toLowerCase() === t));
+  }
   if (search) {
     const q = search.toLowerCase();
     players = players.filter(p =>
       p.name.toLowerCase().includes(q) ||
       (p.mobile && p.mobile.includes(q)) ||
-      (p.city && p.city.toLowerCase().includes(q))
+      (p.city && p.city.toLowerCase().includes(q)) ||
+      (p.notes && String(p.notes).toLowerCase().includes(q)) ||
+      (Array.isArray(p.tags) && p.tags.some(tg => String(tg).toLowerCase().includes(q)))
     );
   }
 
@@ -65,7 +79,8 @@ router.get('/public/:id', (req, res) => {
     battingStyle: player.battingStyle,
     bowlingStyle: player.bowlingStyle,
     age: player.age,
-    status: player.status
+    status: player.status,
+    tags: player.tags || []
   });
 });
 
@@ -87,6 +102,43 @@ router.get('/stats/summary', authMiddleware, (req, res) => {
   });
 });
 
+router.get('/duplicates', authMiddleware, requireRole('admin'), (req, res) => {
+  const players = getPlayers();
+  const map = {};
+  players.forEach(p => {
+    const key = String(p.name || '').trim().toLowerCase();
+    if (!key) return;
+    if (!map[key]) map[key] = [];
+    map[key].push({ id: p.id, name: p.name, status: p.status, mobile: p.mobile, createdAt: p.createdAt });
+  });
+  const groups = Object.values(map).filter(g => g.length > 1);
+  res.json({ groups, count: groups.length });
+});
+
+router.post('/merge-duplicates', authMiddleware, requireRole('admin'), (req, res) => {
+  const { keepId, mergeIds } = req.body || {};
+  if (!keepId || !Array.isArray(mergeIds) || !mergeIds.length) {
+    return res.status(400).json({ error: 'keepId and mergeIds[] required' });
+  }
+  const players = getPlayers();
+  const keep = players.find(p => p.id === keepId);
+  if (!keep) return res.status(404).json({ error: 'keep player not found' });
+  const data = getData();
+  let merged = 0;
+  for (const mid of mergeIds) {
+    if (mid === keepId) continue;
+    const idx = data.players.findIndex(p => p.id === mid);
+    if (idx < 0) continue;
+    (data.soldPlayers || []).forEach(s => {
+      if (s.playerId === mid) s.playerId = keepId;
+    });
+    data.players.splice(idx, 1);
+    merged++;
+  }
+  persist();
+  res.json({ message: `Merged ${merged} into ${keep.name}`, keepId, merged });
+});
+
 router.get('/:id', authMiddleware, (req, res) => {
   const players = getPlayers();
   const player = players.find(p => p.id === req.params.id);
@@ -96,17 +148,14 @@ router.get('/:id', authMiddleware, (req, res) => {
 
 router.post('/', authMiddleware, requireRole('admin'), (req, res) => {
   try {
-    const { name, mobile, email, role, battingStyle, bowlingStyle, age, city, bio, basePrice, photoUrl } = req.body;
-
+    const { name, mobile, email, role, battingStyle, bowlingStyle, age, city, bio, basePrice, photoUrl, notes, tags } = req.body;
     if (!name || !role) {
       return res.status(400).json({ error: 'Name and Role are required' });
     }
-
     const players = getPlayers();
     if (mobile && players.find(p => p.mobile === mobile)) {
       return res.status(400).json({ error: 'Player with this mobile number already exists' });
     }
-
     const player = addPlayer({
       id: uuidv4(),
       name: name.trim(),
@@ -121,9 +170,10 @@ router.post('/', authMiddleware, requireRole('admin'), (req, res) => {
       basePrice: basePrice ? Number(basePrice) : 0,
       status: 'Pending',
       photoUrl: photoUrl || '',
+      notes: notes != null ? String(notes).slice(0, 2000) : '',
+      tags: normalizeTags(tags),
       createdAt: new Date().toISOString()
     });
-
     res.status(201).json(player);
   } catch (err) {
     console.error('Create player error:', err);
@@ -132,15 +182,15 @@ router.post('/', authMiddleware, requireRole('admin'), (req, res) => {
 });
 
 router.put('/:id', authMiddleware, requireRole('admin'), (req, res) => {
-  const allowed = ['name', 'mobile', 'email', 'role', 'battingStyle', 'bowlingStyle', 'age', 'city', 'bio', 'basePrice', 'status', 'photoUrl'];
+  const allowed = ['name', 'mobile', 'email', 'role', 'battingStyle', 'bowlingStyle', 'age', 'city', 'bio', 'basePrice', 'status', 'photoUrl', 'notes', 'tags'];
   const updates = {};
   allowed.forEach(key => {
     if (req.body[key] !== undefined) updates[key] = req.body[key];
   });
-
   if (updates.age) updates.age = Number(updates.age);
   if (updates.basePrice !== undefined) updates.basePrice = Number(updates.basePrice);
-
+  if (updates.notes !== undefined) updates.notes = String(updates.notes).slice(0, 2000);
+  if (updates.tags !== undefined) updates.tags = normalizeTags(updates.tags);
   const updated = updatePlayer(req.params.id, updates);
   if (!updated) return res.status(404).json({ error: 'Player not found' });
   res.json(updated);
@@ -152,10 +202,8 @@ router.patch('/:id/status', authMiddleware, requireRole('admin'), (req, res) => 
   if (!allowed.includes(status)) {
     return res.status(400).json({ error: `Invalid status. Use ${allowed.join(', ')}` });
   }
-
   const player = getPlayers().find(p => p.id === req.params.id);
   if (!player) return res.status(404).json({ error: 'Player not found' });
-
   if (player.status === 'Sold' && status !== 'Sold') {
     const data = getData();
     const soldIdx = data.soldPlayers.findIndex(s => s.playerId === player.id);
@@ -169,7 +217,6 @@ router.patch('/:id/status', authMiddleware, requireRole('admin'), (req, res) => 
       persist();
     }
   }
-
   const updated = updatePlayer(req.params.id, { status });
   res.json(updated);
 });
@@ -187,7 +234,7 @@ router.post('/bulk-approve', authMiddleware, requireRole('admin'), (req, res) =>
 });
 
 router.post('/bulk-update', authMiddleware, requireRole('admin'), (req, res) => {
-  const { ids, basePrice, role, status } = req.body || {};
+  const { ids, basePrice, role, status, tags, notes } = req.body || {};
   if (!Array.isArray(ids) || ids.length === 0) {
     return res.status(400).json({ error: 'ids array is required' });
   }
@@ -207,8 +254,10 @@ router.post('/bulk-update', authMiddleware, requireRole('admin'), (req, res) => 
     }
     updates.status = status;
   }
+  if (tags !== undefined) updates.tags = normalizeTags(tags);
+  if (notes !== undefined) updates.notes = String(notes).slice(0, 2000);
   if (Object.keys(updates).length === 0) {
-    return res.status(400).json({ error: 'Provide basePrice, role, and/or status to update' });
+    return res.status(400).json({ error: 'Provide fields to update' });
   }
   let count = 0;
   for (const id of ids) {
@@ -247,10 +296,15 @@ router.post('/import', authMiddleware, requireRole('admin'), upload.single('file
   if (!req.file) {
     return res.status(400).json({ error: 'CSV file is required' });
   }
-
+  const dryRun =
+    req.query.dryRun === '1' ||
+    req.query.dry_run === '1' ||
+    req.body?.dryRun === true ||
+    req.body?.dryRun === '1';
   const errors = [];
   let imported = 0;
   let skipped = 0;
+  const wouldCreate = [];
 
   fs.createReadStream(req.file.path)
     .pipe(csv({
@@ -272,17 +326,12 @@ router.post('/import', authMiddleware, requireRole('admin'), upload.single('file
         const bowlingStyle = row.bowling_style || row.bowling || '';
         const age = row.age || row.dob || '';
         const city = row.city || row.location || row.state || '';
-        const bio =
-          row.bio ||
-          row.short_bio ||
-          row.shortbio ||
-          row.experience ||
-          row.comments ||
-          row.description ||
-          '';
+        const bio = row.bio || row.short_bio || row.shortbio || row.experience || row.comments || row.description || '';
         const basePriceRaw = row.base_price || row.baseprice || row.base || row.price || 0;
         const basePrice = Number(String(basePriceRaw).replace(/[₹$,\s]/g, '')) || 0;
         const photoUrl = row.photo || row.photo_url || row.image || row.image_url || '';
+        const tagsRaw = row.tags || row.tag || row.set || '';
+        const notes = row.notes || row.note || '';
 
         if (!name || name.trim().length < 2) {
           errors.push({ reason: 'Missing or invalid name' });
@@ -305,6 +354,12 @@ router.post('/import', authMiddleware, requireRole('admin'), upload.single('file
           return;
         }
 
+        if (dryRun) {
+          wouldCreate.push({ name: name.trim(), role: normalizedRole, basePrice, tags: tagsRaw || undefined });
+          imported++;
+          return;
+        }
+
         addPlayer({
           id: uuidv4(),
           name: name.trim(),
@@ -319,10 +374,11 @@ router.post('/import', authMiddleware, requireRole('admin'), upload.single('file
           basePrice,
           status: 'Pending',
           photoUrl: String(photoUrl).trim(),
+          notes: notes ? String(notes).trim().slice(0, 2000) : '',
+          tags: normalizeTags(tagsRaw),
           createdAt: new Date().toISOString(),
           importedFrom: 'csv'
         });
-
         imported++;
       } catch (err) {
         errors.push({ reason: err.message });
@@ -331,7 +387,14 @@ router.post('/import', authMiddleware, requireRole('admin'), upload.single('file
     })
     .on('end', () => {
       fs.unlink(req.file.path, () => {});
-      res.json({ message: 'Import completed', imported, skipped, errors: errors.slice(0, 20) });
+      res.json({
+        message: dryRun ? 'Dry-run completed' : 'Import completed',
+        dryRun: !!dryRun,
+        imported,
+        skipped,
+        wouldCreate: dryRun ? wouldCreate.slice(0, 50) : undefined,
+        errors: errors.slice(0, 20)
+      });
     })
     .on('error', (err) => {
       fs.unlink(req.file.path, () => {});
@@ -343,7 +406,6 @@ router.delete('/:id', authMiddleware, requireRole('admin'), (req, res) => {
   const data = getData();
   const idx = data.players.findIndex(p => p.id === req.params.id);
   if (idx === -1) return res.status(404).json({ error: 'Player not found' });
-
   const soldIdx = data.soldPlayers.findIndex(s => s.playerId === req.params.id);
   if (soldIdx !== -1) {
     const sold = data.soldPlayers[soldIdx];
@@ -353,7 +415,6 @@ router.delete('/:id', authMiddleware, requireRole('admin'), (req, res) => {
     }
     data.soldPlayers.splice(soldIdx, 1);
   }
-
   data.players.splice(idx, 1);
   persist();
   res.json({ message: 'Player deleted' });
