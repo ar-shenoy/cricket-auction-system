@@ -76,8 +76,8 @@ export default function Intelligence() {
       {data && (
         <div className="space-y-4">
           <div className="glass p-3 text-[13px]" style={{ color: 'var(--text-2)' }}>
-            Flags: <span style={{ color: '#ff9f0a' }}>overpay</span> = >25% above role avg ·{' '}
-            <span style={{ color: '#30d158' }}>value</span> = >25% below · live refresh on each sale
+            Flags: <span style={{ color: '#ff9f0a' }}>overpay</span> = {'>'}25% above role avg ·{' '}
+            <span style={{ color: '#30d158' }}>value</span> = {'>'}25% below · live refresh on each sale
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
