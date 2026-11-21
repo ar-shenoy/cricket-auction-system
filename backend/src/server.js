@@ -12,6 +12,7 @@ const auctionRoutes = require('./routes/auctions');
 const auctionExtraRoutes = require('./routes/auctions_extra');
 const uploadRoutes = require('./routes/upload');
 const matchRoutes = require('./routes/matches');
+const matchFixturesRoutes = require('./routes/matches_fixtures');
 const orgRoutes = require('./routes/orgs');
 const billingRoutes = require('./routes/billing');
 const analyticsRoutes = require('./routes/analytics');
@@ -44,6 +45,7 @@ app.use('/api/auctions', auctionRoutes);
 app.use('/api/auctions', auctionExtraRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/matches', matchRoutes);
+app.use('/api/matches', matchFixturesRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/broadcast', broadcastRoutes);
 app.use('/api/series', seriesRoutes);
@@ -75,29 +77,24 @@ app.get('/api/health', (req, res) => {
 
 io.on('connection', (socket) => {
   console.log('Client connected:', socket.id);
-
   socket.on('join-auction', (auctionId) => {
     if (auctionId) {
       socket.join(`auction-${auctionId}`);
       socket.emit('joined', { auctionId });
     }
   });
-
   socket.on('leave-auction', (auctionId) => {
     if (auctionId) socket.leave(`auction-${auctionId}`);
   });
-
   socket.on('join-match', (matchId) => {
     if (matchId) {
       socket.join(`match-${matchId}`);
       socket.emit('joined-match', { matchId });
     }
   });
-
   socket.on('leave-match', (matchId) => {
     if (matchId) socket.leave(`match-${matchId}`);
   });
-
   socket.on('disconnect', () => {
     console.log('Client disconnected:', socket.id);
   });
@@ -109,11 +106,7 @@ const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   setInterval(() => {
-    try {
-      purgeExpiredPhotos(15);
-    } catch (e) {
-      console.warn('purge photos', e.message);
-    }
+    try { purgeExpiredPhotos(15); } catch (e) { console.warn('purge photos', e.message); }
   }, 6 * 60 * 60 * 1000);
 });
 
