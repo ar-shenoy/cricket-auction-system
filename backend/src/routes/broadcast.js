@@ -1,95 +1,95 @@
 const express = require('express');
-const { getBroadcast, upsertBroadcast, getOrganizations, getOrgBySlug, getMatches } = require('../data/store');
+const { getBroadcast, upsertBroadcast, getOrgById } = require('../data/store');
 const { authMiddleware, requireRole } = require('../middleware/auth');
 const { tenantMiddleware } = require('../middleware/tenant');
 
 const router = express.Router();
 
-function defaultBrand(org) {
+function defaultBrand(orgId, name) {
   return {
-    orgId: org?.id || 'org-default',
+    orgId,
     primaryColor: '#0a84ff',
     secondaryColor: '#1c1c1e',
     accentColor: '#30d158',
-    logoUrl: '',
+    logoUrl: null,
     sponsorLogos: [],
-    sponsorPlacements: [],
     showSponsors: true,
-    lowerThirdTitle: org?.name || 'League',
-    lowerThirdSubtitle: 'Live'
+    sponsorRotateSeconds: 8,
+    lowerThirdTitle: name || 'Live',
+    lowerThirdSubtitle: 'AuctionScore',
+    sheetSyncUrl: null,
+    sheetSyncEnabled: false
   };
 }
 
 router.get('/settings', authMiddleware, tenantMiddleware, (req, res) => {
   const row = getBroadcast(req.orgId)[0];
-  const org = (req.org) || null;
-  res.json(row || defaultBrand(org || { id: req.orgId, name: 'League' }));
+  const org = getOrgById(req.orgId);
+  res.json(row || defaultBrand(req.orgId, org?.name));
 });
 
-router.put('/settings', authMiddleware, requireRole('admin', 'developer'), tenantMiddleware, (req, res) => {
+router.put('/settings', authMiddleware, requireRole('admin'), tenantMiddleware, (req, res) => {
   const allowed = [
     'primaryColor', 'secondaryColor', 'accentColor', 'logoUrl',
-    'sponsorLogos', 'sponsorPlacements', 'showSponsors', 'lowerThirdTitle', 'lowerThirdSubtitle'
+    'sponsorLogos', 'showSponsors', 'sponsorRotateSeconds',
+    'lowerThirdTitle', 'lowerThirdSubtitle', 'sheetSyncUrl', 'sheetSyncEnabled'
   ];
   const data = {};
   allowed.forEach(k => {
     if (req.body[k] !== undefined) data[k] = req.body[k];
   });
-  const saved = upsertBroadcast(req.orgId, data);
-  res.json(saved);
+  if (data.sponsorRotateSeconds != null) {
+    data.sponsorRotateSeconds = Math.max(0, Math.min(120, Number(data.sponsorRotateSeconds) || 0));
+  }
+  if (Array.isArray(data.sponsorLogos)) {
+    data.sponsorLogos = data.sponsorLogos
+      .slice(0, 20)
+      .map(s => ({
+        url: String(s.url || '').slice(0, 500),
+        label: s.label ? String(s.label).slice(0, 40) : null,
+        position: ['top', 'bottom', 'left', 'right', 'corner'].includes(s.position) ? s.position : 'bottom'
+      }))
+      .filter(s => s.url);
+  }
+  if (data.sheetSyncUrl != null) {
+    const u = String(data.sheetSyncUrl || '').trim();
+    if (u && !/^https?:\/\//i.test(u)) {
+      return res.status(400).json({ error: 'sheetSyncUrl must be http(s)' });
+    }
+    data.sheetSyncUrl = u.slice(0, 500);
+  }
+  const org = getOrgById(req.orgId);
+  const base = getBroadcast(req.orgId)[0] || defaultBrand(req.orgId, org?.name);
+  const updated = upsertBroadcast(req.orgId, { ...base, ...data });
+  res.json(updated);
 });
 
-router.get('/public/lower-thirds', (req, res) => {
-  const slug = req.query.slug;
-  const org = slug ? getOrgBySlug(slug) : getOrganizations()[0];
-  if (!org) return res.status(404).json({ error: 'Org not found' });
-  const brand = getBroadcast(org.id)[0] || defaultBrand(org);
-  const matches = getMatches(org.id);
-  const live = matches.find(m => m.status === 'live' || m.status === 'rain_delay' || m.status === 'super_over');
-  const d = live?.display || {};
+router.get('/public', (req, res) => {
+  const orgId = req.query.orgId || req.headers['x-org-id'];
+  let row = null;
+  if (orgId) row = getBroadcast(orgId)[0];
+  if (!row) {
+    const all = getBroadcast();
+    row = all[0] || defaultBrand('org-default', 'Live');
+  }
+  const logos = row.showSponsors === false ? [] : (Array.isArray(row.sponsorLogos) ? row.sponsorLogos : []);
+  const rotate = Number(row.sponsorRotateSeconds) || 0;
+  let activeIndex = 0;
+  if (rotate > 0 && logos.length > 1) {
+    activeIndex = Math.floor(Date.now() / (rotate * 1000)) % logos.length;
+  }
   res.json({
-    brand: {
-      primaryColor: brand.primaryColor,
-      secondaryColor: brand.secondaryColor,
-      accentColor: brand.accentColor,
-      logoUrl: brand.logoUrl,
-      sponsorLogos: brand.showSponsors === false ? [] : (brand.sponsorLogos || []),
-      sponsorPlacements: brand.showSponsors === false ? [] : (brand.sponsorPlacements || []),
-      title: brand.lowerThirdTitle || org.name,
-      subtitle: brand.lowerThirdSubtitle || 'Live',
-      showSponsors: brand.showSponsors !== false
-    },
-    match: live
-      ? {
-          id: live.id,
-          name: live.name,
-          status: live.status,
-          teamAName: live.teamAName,
-          teamBName: live.teamBName,
-          score: d.score || `${live.innings1?.runs || 0}/${live.innings1?.wickets || 0}`,
-          overs: d.overs || '0.0',
-          crr: d.crr || null,
-          rrr: d.rrr || null,
-          target: d.target ?? null,
-          striker: d.striker || null,
-          nonStriker: d.nonStriker || null,
-          bowler: d.bowler || null,
-          thisOver: d.thisOver || [],
-          inPowerplay: !!d.inPowerplay,
-          freeHit: !!d.freeHit,
-          rainDelay: !!d.rainDelay
-        }
-      : null,
-    generatedAt: new Date().toISOString()
+    logoUrl: row.logoUrl || null,
+    primaryColor: row.primaryColor,
+    accentColor: row.accentColor,
+    lowerThirdTitle: row.lowerThirdTitle,
+    lowerThirdSubtitle: row.lowerThirdSubtitle,
+    showSponsors: row.showSponsors !== false,
+    sponsorRotateSeconds: rotate,
+    sponsorLogos: logos,
+    activeSponsorIndex: activeIndex,
+    activeSponsor: logos.length ? logos[activeIndex] : null
   });
-});
-
-router.get('/public/brand', (req, res) => {
-  const slug = req.query.slug;
-  const org = slug ? getOrgBySlug(slug) : getOrganizations()[0];
-  if (!org) return res.status(404).json({ error: 'Org not found' });
-  const brand = getBroadcast(org.id)[0] || defaultBrand(org);
-  res.json({ org: { name: org.name, slug: org.slug }, brand });
 });
 
 module.exports = router;
