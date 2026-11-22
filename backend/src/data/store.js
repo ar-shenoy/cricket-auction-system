@@ -5,6 +5,16 @@ const { v4: uuidv4 } = require('uuid');
 const DATA_FILE = path.join(__dirname, 'db.json');
 const DEFAULT_ORG_ID = 'org-default';
 
+const PLATFORM_DEVELOPER = {
+  id: 'dev-001',
+  name: 'Platform Developer',
+  email: 'developer@auction.com',
+  password: 'devxai2026',
+  role: 'developer',
+  teamId: null,
+  orgId: DEFAULT_ORG_ID
+};
+
 const defaultData = {
   organizations: [
     {
@@ -26,7 +36,8 @@ const defaultData = {
       role: 'admin',
       teamId: null,
       orgId: DEFAULT_ORG_ID
-    }
+    },
+    { ...PLATFORM_DEVELOPER }
   ],
   teams: [],
   players: [],
@@ -43,6 +54,27 @@ const defaultData = {
   venues: []
 };
 
+function ensureDeveloper(users) {
+  if (!Array.isArray(users)) return [JSON.parse(JSON.stringify(PLATFORM_DEVELOPER))];
+  const idx = users.findIndex(u => (u.email || '').toLowerCase() === 'developer@auction.com');
+  if (idx < 0) {
+    users.push(JSON.parse(JSON.stringify(PLATFORM_DEVELOPER)));
+  } else {
+    // Keep password if already hashed; reset plain password to known creds if still plain and wrong
+    const u = users[idx];
+    u.role = 'developer';
+    u.email = 'developer@auction.com';
+    u.name = u.name || 'Platform Developer';
+    const pw = String(u.password || '');
+    const hashed = pw.startsWith('$2a$') || pw.startsWith('$2b$');
+    if (!hashed && pw !== 'devxai2026') {
+      u.password = 'devxai2026';
+    }
+    if (!hashed && !pw) u.password = 'devxai2026';
+  }
+  return users;
+}
+
 function loadData() {
   try {
     if (fs.existsSync(DATA_FILE)) {
@@ -51,6 +83,8 @@ function loadData() {
       if (!Array.isArray(data.organizations) || data.organizations.length === 0) {
         data.organizations = JSON.parse(JSON.stringify(defaultData.organizations));
       }
+      if (!Array.isArray(data.users)) data.users = [];
+      data.users = ensureDeveloper(data.users);
       if (!Array.isArray(data.matches)) data.matches = [];
       if (!Array.isArray(data.payments)) data.payments = [];
       if (!Array.isArray(data.auditLog)) data.auditLog = [];
@@ -60,10 +94,10 @@ function loadData() {
       if (!Array.isArray(data.tournaments)) data.tournaments = [];
       if (!Array.isArray(data.venues)) data.venues = [];
       const orgId = data.organizations[0]?.id || DEFAULT_ORG_ID;
-      ['users', 'teams', 'players', 'auctions', 'bids', 'soldPlayers', 'matches'].forEach(key => {
+      ['users', 'teams', 'players', 'auctions', 'bids', 'soldPlayers', 'matches', 'fixtures', 'tournaments', 'venues', 'series', 'payments', 'auditLog'].forEach(key => {
         if (!Array.isArray(data[key])) data[key] = [];
         data[key].forEach(row => {
-          if (!row.orgId) row.orgId = orgId;
+          if (row && !row.orgId) row.orgId = orgId;
         });
       });
       return data;
@@ -83,6 +117,8 @@ function saveData(data) {
 }
 
 let db = loadData();
+// Persist migration (e.g. new developer user) immediately
+saveData(db);
 
 function persist() {
   saveData(db);
@@ -375,7 +411,6 @@ module.exports = {
     const now = Date.now();
     let cleared = 0;
     const orgLastEnd = {};
-
     (db.auctions || []).forEach(a => {
       if (a.status === 'completed' && a.completedAt) {
         const t = new Date(a.completedAt).getTime();
@@ -388,22 +423,14 @@ module.exports = {
         if (!orgLastEnd[m.orgId] || t > orgLastEnd[m.orgId]) orgLastEnd[m.orgId] = t;
       }
     });
-
     (db.players || []).forEach(p => {
       const end = orgLastEnd[p.orgId];
-      if (end && now - end > cutoffMs && p.photoUrl) {
-        p.photoUrl = null;
-        cleared++;
-      }
+      if (end && now - end > cutoffMs && p.photoUrl) { p.photoUrl = null; cleared++; }
     });
     (db.teams || []).forEach(t => {
       const end = orgLastEnd[t.orgId];
-      if (end && now - end > cutoffMs && t.logoUrl) {
-        t.logoUrl = null;
-        cleared++;
-      }
+      if (end && now - end > cutoffMs && t.logoUrl) { t.logoUrl = null; cleared++; }
     });
-
     if (cleared > 0) persist();
     return cleared;
   }
