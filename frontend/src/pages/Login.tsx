@@ -40,24 +40,59 @@ export default function Login() {
         </div>
       </header>
 
-      <div className="flex-1 flex items-center justify-center px-4 py-12">
-        <div className="w-full max-w-[400px]">
-          <div className="text-center mb-8">
-            <h1 className="text-[32px] font-extrabold tracking-tight leading-tight" style={{ color: 'var(--text)' }}>
-              Welcome back
+      <div className="flex-1 flex items-center justify-center px-4 py-10">
+        <div className="w-full max-w-[420px]">
+          <div className="mb-8">
+            <div
+              className="inline-block px-2.5 py-1 text-[11px] font-extrabold tracking-[0.14em] uppercase mb-3"
+              style={{ background: 'var(--accent)', color: 'var(--accent-contrast)' }}
+            >
+              Live now
+            </div>
+            <h1
+              className="text-[42px] sm:text-[52px] font-black leading-[0.92] tracking-tight uppercase"
+              style={{ color: 'var(--accent)' }}
+            >
+              Player<br />Auction
             </h1>
-            <p className="mt-2 text-[15px]" style={{ color: 'var(--text-2)' }}>Sign in to your organisation</p>
           </div>
 
-          <div className="glass-strong p-7 sm:p-8 rounded-[20px]">
+          <div
+            className="p-6 sm:p-8"
+            style={{
+              background: '#0e0e0e',
+              border: '1px solid rgba(255,255,255,0.1)',
+              borderTop: '3px solid var(--accent)',
+              borderRadius: 12,
+              boxShadow: '0 24px 60px rgba(0,0,0,0.55)'
+            }}
+          >
+            <h2
+              className="text-[28px] font-black tracking-tight uppercase m-0"
+              style={{ color: 'var(--text)' }}
+            >
+              Sign in
+            </h2>
+            <div
+              style={{
+                width: 48,
+                height: 3,
+                background: 'var(--accent)',
+                margin: '0.55rem 0 1rem'
+              }}
+            />
+            <p className="text-[14px] m-0 mb-6" style={{ color: 'var(--text-2)' }}>
+              Follow the auction live. Captains bid from here.
+            </p>
+
             <form onSubmit={handleSubmit} className="space-y-4" autoComplete="off">
               {error && (
                 <div
-                  className="rounded-xl px-4 py-3 text-[14px] font-medium"
+                  className="px-4 py-3 text-[13px] font-semibold rounded-md"
                   style={{
-                    background: 'color-mix(in srgb, var(--danger) 16%, transparent)',
+                    background: 'rgba(255,59,59,0.12)',
                     color: 'var(--danger)',
-                    border: '1px solid color-mix(in srgb, var(--danger) 35%, transparent)'
+                    border: '1px solid rgba(255,59,59,0.35)'
                   }}
                 >
                   {error}
@@ -71,7 +106,6 @@ export default function Login() {
                   autoComplete="username"
                   value={email}
                   onChange={e => setEmail(e.target.value)}
-                  placeholder="you@example.com"
                   className="as-input"
                   required
                 />
@@ -84,19 +118,22 @@ export default function Login() {
                   autoComplete="current-password"
                   value={password}
                   onChange={e => setPassword(e.target.value)}
-                  placeholder="••••••••"
                   className="as-input"
                   required
                 />
               </div>
-              <button type="submit" disabled={loading} className="as-btn-primary w-full mt-2">
+              <button type="submit" disabled={loading} className="as-btn-primary w-full mt-1">
                 {loading ? 'Signing in…' : 'Sign in'}
               </button>
             </form>
-            <p className="text-center text-[14px] mt-6" style={{ color: 'var(--text-2)' }}>
-              New?{' '}
-              <Link to="/register" className="font-semibold" style={{ color: 'var(--accent)' }}>
-                Create organisation
+
+            <p
+              className="text-center text-[12px] font-bold tracking-[0.08em] uppercase mt-6 mb-0"
+              style={{ color: 'var(--text-3)' }}
+            >
+              New here?{' '}
+              <Link to="/register" style={{ color: 'var(--accent)' }}>
+                Create an account
               </Link>
             </p>
           </div>
