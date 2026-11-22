@@ -13,21 +13,21 @@ function authMiddleware(req, res, next) {
     req.user = decoded;
     next();
   } catch (err) {
-    return res.status(401).json({ error: 'Invalid token' });
+    return res.status(401).json({ error: 'Invalid or expired token' });
   }
 }
 
+/** Developer is a superuser: passes any requireRole check. */
 function requireRole(...roles) {
   return (req, res, next) => {
     if (!req.user) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
-    // Developer is superuser — can access any admin route
     if (req.user.role === 'developer') {
       return next();
     }
     if (!roles.includes(req.user.role)) {
-      return res.status(403).json({ error: 'Forbidden: insufficient role' });
+      return res.status(403).json({ error: 'Access denied. Insufficient permissions.' });
     }
     next();
   };
