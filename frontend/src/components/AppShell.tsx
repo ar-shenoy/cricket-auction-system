@@ -63,8 +63,8 @@ export default function AppShell({
   });
 
   const topLinks = [
-    { to: '/live', label: 'Live', feature: 'auction' },
-    { href: '/scoreboard', label: 'Board', feature: 'scoreboard' },
+    { to: '/live', label: 'Live view', feature: 'auction' },
+    { href: '/scoreboard', label: 'Projector', feature: 'scoreboard' },
     { to: '/points', label: 'Points', feature: 'points' },
     { href: '/match-live', label: 'Match', feature: 'scoreboard' },
     { href: '/tournament', label: 'Tournament', feature: null }
@@ -73,6 +73,11 @@ export default function AppShell({
     return features[item.feature] !== false;
   });
 
+  const roleLabel =
+    user?.role === 'developer' ? 'DEV' :
+    user?.role === 'admin' ? 'ADMIN' :
+    user?.role === 'team_manager' ? 'CAPTAIN' : 'USER';
+
   return (
     <div className="page-mesh" style={{ color: 'var(--text)' }}>
       <header className="glass-nav">
@@ -80,8 +85,9 @@ export default function AppShell({
           <div className="flex items-center gap-3 min-w-0">
             <Link to="/" className="as-brand shrink-0">
               <span className="as-brand-mark" aria-hidden>🏏</span>
-              <span className="hidden sm:inline">AuctionScore</span>
+              <span className="hidden sm:inline">Auction Admin</span>
             </Link>
+            <span className="as-chip as-chip--live">{roleLabel}</span>
             {title && (
               <div className="hidden md:block pl-3 min-w-0" style={{ borderLeft: '1px solid var(--separator)' }}>
                 <div className="as-page-title truncate">{title}</div>
@@ -110,7 +116,7 @@ export default function AppShell({
             <ThemeToggle />
             {user && (
               <button type="button" onClick={logout} className="as-nav-link">
-                Logout
+                Sign out
               </button>
             )}
           </div>
