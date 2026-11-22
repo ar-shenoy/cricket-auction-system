@@ -4,8 +4,12 @@ import { publicApi, getSocketUrl } from '../services/api';
 import { startKeepAliveInterval } from '../utils/keepAlive';
 import { io, Socket } from 'socket.io-client';
 import ThemeToggle from '../components/ThemeToggle';
+import PlayerCard from '../components/PlayerCard';
 
-interface Player { id: string; name: string; role?: string; photoUrl?: string; basePrice?: number; city?: string; }
+interface Player {
+  id: string; name: string; role?: string; photoUrl?: string; basePrice?: number;
+  city?: string; battingStyle?: string; bowlingStyle?: string; age?: number | null; tags?: string[];
+}
 interface Team { id: string; name: string; logoUrl?: string; }
 interface SoldRow { id: string; soldPrice: number; soldAt?: string; player?: Player; team?: Team; }
 interface BidRow { id: string; amount: number; teamId: string; teamName?: string; playerId?: string; createdAt?: string | null; }
@@ -32,11 +36,8 @@ export default function LiveViewer() {
   const loadSold = async (auctionId: string) => {
     try {
       let res;
-      try {
-        res = await publicApi.get(`/auctions/${auctionId}/public/sold`);
-      } catch {
-        res = await publicApi.get('/auctions/public/sold');
-      }
+      try { res = await publicApi.get(`/auctions/${auctionId}/public/sold`); }
+      catch { res = await publicApi.get('/auctions/public/sold'); }
       setSoldList(res.data || []);
     } catch { /* ignore */ }
   };
@@ -50,16 +51,24 @@ export default function LiveViewer() {
 
   const load = useCallback(async () => {
     try {
-      const aRes = await publicApi.get('/auctions/public/active').catch(() => ({ data: null }));
-      const a = aRes.data;
+      const params = new URLSearchParams(window.location.search);
+      const token = params.get('token');
+      let a: any = null;
+      if (token) {
+        const tRes = await publicApi.get(`/auctions/public/by-token/${token}`).catch(() => ({ data: null }));
+        a = tRes.data?.auction || tRes.data || null;
+      } else {
+        const aRes = await publicApi.get('/auctions/public/active').catch(() => ({ data: null }));
+        a = aRes.data;
+      }
       setAuction(a || null);
       if (a?.currentPlayer) setCurrent(a.currentPlayer);
       else if (a?.currentPlayerId) {
         try {
           const pr = await publicApi.get(`/players/public/${a.currentPlayerId}`);
           setCurrent(pr.data);
-        } catch { /* keep previous */ }
-      }
+        } catch { /* keep */ }
+      } else setCurrent(null);
       if (a?.id) {
         await loadSold(a.id);
         await loadBids(a.id);
@@ -152,123 +161,57 @@ export default function LiveViewer() {
     };
   }, [auction?.id]);
 
-  useEffect(() => {
-    if (!auction?.id) return;
-    const id = window.setInterval(async () => {
-      try {
-        const aRes = await publicApi.get('/auctions/public/active');
-        const a = aRes.data;
-        if (!a?.id) return;
-        setAuction((prev: any) => {
-          if (!prev) return a;
-          if (prev.currentPlayerId !== a.currentPlayerId || prev.currentBid !== a.currentBid || prev.status !== a.status) return a;
-          return prev;
-        });
-        if (a.currentPlayerId) {
-          setCurrent(prev => {
-            if (prev?.id === a.currentPlayerId) return prev;
-            publicApi.get(`/players/public/${a.currentPlayerId}`).then(pr => {
-              if (pr.data) setCurrent(pr.data);
-            }).catch(() => {});
-            return prev;
-          });
-        }
-      } catch { /* ignore */ }
-    }, 4000);
-    return () => clearInterval(id);
-  }, [auction?.id]);
-
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--bg)' }}>
-        <div className="text-[var(--text-secondary)]">Loading live auction…</div>
+        <div style={{ color: 'var(--text-2)' }}>Loading live auction…</div>
       </div>
     );
   }
 
+  const cardStatus =
+    lastSale?.status === 'Sold' ? 'sold' :
+    lastSale?.status === 'Unsold' ? 'unsold' :
+    current ? 'bidding' : 'idle';
+
   return (
-    <div className="min-h-screen pb-10" style={{ background: 'var(--bg)', color: 'var(--text-primary)' }}>
+    <div className="min-h-screen pb-10" style={{ background: 'var(--bg)', color: 'var(--text)' }}>
       {!embedMode && (
         <header className="glass-nav sticky top-0 z-40">
           <div className="max-w-lg mx-auto px-4 py-3 flex items-center justify-between">
             <div>
               <div className="text-[15px] font-semibold">{auction?.name || 'Live Auction'}</div>
-              <div className="text-xs text-[var(--text-secondary)] capitalize">{auction?.status || 'idle'} · Public View</div>
+              <div className="text-xs capitalize" style={{ color: 'var(--text-2)' }}>{auction?.status || 'idle'} · Public</div>
             </div>
             <div className="flex items-center gap-3">
-              <Link to="/results" className="text-[13px]" style={{ color: 'var(--accent)' }}>View report</Link>
+              <Link to="/results" className="text-[13px]" style={{ color: 'var(--accent)' }}>Report</Link>
               <ThemeToggle />
             </div>
           </div>
         </header>
       )}
-      {embedMode && (
-        <div className="px-4 pt-3 text-center">
-          <h1 className="text-lg font-semibold">{auction?.name || 'Live Auction'}</h1>
-          <div className="text-xs text-[var(--text-secondary)] capitalize">{auction?.status || 'idle'}</div>
-        </div>
-      )}
 
       <main className="max-w-lg mx-auto p-4 space-y-4">
-        {current && (
-          <div className={`glass rounded-[22px] p-6 text-center relative overflow-hidden ${
-            lastSale?.status === 'Sold' ? 'as-anim-sold' :
-            lastSale?.status === 'Unsold' ? 'as-anim-unsold' :
-            lastSale?.status === 'Recalled' ? 'as-anim-recall' : ''
-          }`}>
-            {current.photoUrl ? (
-              <img
-                src={current.photoUrl}
-                alt=""
-                className="w-44 h-44 sm:w-56 sm:h-56 md:w-64 md:h-64 rounded-3xl object-cover mx-auto mb-4 shadow-xl"
-              />
-            ) : (
-              <div className="w-44 h-44 sm:w-56 sm:h-56 md:w-64 md:h-64 rounded-3xl mx-auto mb-4 flex items-center justify-center text-6xl bg-black/5 dark:bg-white/10">
-                🏏
-              </div>
-            )}
-            <div className="text-xs uppercase tracking-wide text-[var(--text-secondary)]">
-              {lastSale ? lastSale.status : 'Now auctioning'}
-            </div>
-            <h2 className="text-3xl sm:text-4xl font-semibold mt-1">{current.name}</h2>
-            <p className="text-[var(--text-secondary)] mt-1">
-              {current.role || 'Player'}{current.city ? ` · ${current.city}` : ''}
-            </p>
-
-            {lastSale ? (
-              <div className="mt-6 inline-block glass-strong rounded-2xl px-6 py-3">
-                <div className={`text-2xl sm:text-3xl font-bold tracking-wide ${
-                  lastSale.status === 'Sold' ? 'text-emerald-400' :
-                  lastSale.status === 'Unsold' ? 'text-amber-400' : 'text-sky-400'
-                }`}>
-                  {lastSale.status === 'Sold' ? 'SOLD' : lastSale.status === 'Unsold' ? 'UNSOLD' : lastSale.status.toUpperCase()}
-                </div>
-                {lastSale.status === 'Sold' && (
-                  <>
-                    <div className="text-xl font-semibold tabular-nums mt-1" style={{ color: 'var(--accent)' }}>
-                      ₹{Number(lastSale.price).toLocaleString()}
-                    </div>
-                    <div className="text-sm text-[var(--text-secondary)] mt-1">→ {lastSale.teamName}</div>
-                  </>
-                )}
-              </div>
-            ) : (
-              <div className="mt-6 inline-block glass-strong rounded-2xl px-6 py-3">
-                <div className="text-xs text-[var(--text-secondary)] uppercase">Current bid</div>
-                <div className="text-3xl sm:text-4xl font-semibold text-amber-600 dark:text-amber-400 tabular-nums">
-                  ₹{Number(lastBid?.amount ?? auction?.currentBid ?? current?.basePrice ?? 0).toLocaleString()}
-                </div>
-                <div className="text-sm text-[var(--text-secondary)] mt-1">
-                  Leading:{' '}
-                  <span className="font-medium">{lastBid?.teamName || '—'}</span>
-                </div>
-              </div>
-            )}
+        {!auction && (
+          <div className="glass rounded-[22px] p-10 text-center" style={{ color: 'var(--text-2)' }}>
+            No live auction right now. Check back when bidding starts.
           </div>
         )}
 
-        {!current && (
-          <div className="glass rounded-[22px] p-10 text-center text-[var(--text-secondary)]">
+        {auction && current && (
+          <PlayerCard
+            key={current.id + String(cardStatus)}
+            player={current}
+            bid={lastBid?.amount ?? auction?.currentBid ?? current.basePrice}
+            leadingTeam={lastBid?.teamName || auction?.currentBidderName}
+            status={cardStatus as any}
+            soldPrice={lastSale?.price}
+            soldTeam={lastSale?.teamName}
+          />
+        )}
+
+        {auction && !current && (
+          <div className="glass rounded-[22px] p-10 text-center" style={{ color: 'var(--text-2)' }}>
             Waiting for next player…
           </div>
         )}
@@ -281,15 +224,15 @@ export default function LiveViewer() {
           >
             Bids ({bidHistory.length})
           </button>
-          <span className="text-[13px] text-[var(--text-secondary)]">Sold {soldList.length}</span>
+          <span className="text-[13px]" style={{ color: 'var(--text-2)' }}>Sold {soldList.length}</span>
         </div>
 
         {showBidHistory && (
           <div className="glass rounded-2xl overflow-hidden max-h-64 overflow-y-auto">
             {bidHistory.length === 0 ? (
-              <div className="p-4 text-[13px] text-[var(--text-secondary)]">No bids yet</div>
+              <div className="p-4 text-[13px]" style={{ color: 'var(--text-2)' }}>No bids yet</div>
             ) : bidHistory.map(b => (
-              <div key={b.id} className="flex justify-between px-4 py-2.5 border-b border-white/5">
+              <div key={b.id} className="flex justify-between px-4 py-2.5" style={{ borderBottom: '1px solid var(--separator)' }}>
                 <span>{b.teamName || b.teamId}</span>
                 <span className="font-semibold tabular-nums">₹{Number(b.amount).toLocaleString()}</span>
               </div>
@@ -298,13 +241,13 @@ export default function LiveViewer() {
         )}
 
         <div className="glass rounded-2xl overflow-hidden">
-          <div className="px-4 py-2.5 text-[13px] font-medium text-[var(--text-secondary)]">Sold players</div>
+          <div className="px-4 py-2.5 text-[13px] font-medium" style={{ color: 'var(--text-2)' }}>Sold players</div>
           {soldList.length === 0 ? (
-            <div className="p-4 text-[13px] text-[var(--text-secondary)]">None yet</div>
+            <div className="p-4 text-[13px]" style={{ color: 'var(--text-2)' }}>None yet</div>
           ) : (
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-left text-[var(--text-secondary)]">
+                <tr style={{ color: 'var(--text-2)', textAlign: 'left' }}>
                   <th className="px-4 py-2">Player</th>
                   <th className="px-2 py-2">Team</th>
                   <th className="px-4 py-2 text-right">Price</th>
@@ -312,7 +255,7 @@ export default function LiveViewer() {
               </thead>
               <tbody>
                 {soldList.map(s => (
-                  <tr key={s.id} className="border-t border-white/5">
+                  <tr key={s.id} style={{ borderTop: '1px solid var(--separator)' }}>
                     <td className="px-4 py-2 font-medium">{s.player?.name || '—'}</td>
                     <td className="px-2 py-2">{s.team?.name || '—'}</td>
                     <td className="px-4 py-2 text-right tabular-nums">₹{Number(s.soldPrice || 0).toLocaleString()}</td>
