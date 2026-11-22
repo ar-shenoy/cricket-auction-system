@@ -1,198 +1,290 @@
-/* Arcade player card — not glass */
-.pcard {
-  position: relative;
+/* Premium sports / trading player card */
+.scard {
+  --sc-a: #00e5ff;
+  --sc-b: #0066ff;
+  --sc-c: #001a33;
   width: 100%;
-  max-width: 340px;
+  max-width: 320px;
   margin: 0 auto;
-  border-radius: 28px;
-  padding: 2px;
-  background: linear-gradient(145deg, var(--pc-from, #22d3ee), var(--pc-to, #0284c7), #0f172a);
+  perspective: 900px;
+  animation: scard-enter 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.scard--compact { max-width: 260px; }
+
+.scard__frame {
+  position: relative;
+  border-radius: 18px;
+  padding: 3px;
+  background:
+    linear-gradient(135deg, var(--sc-a), #fff 18%, var(--sc-b) 42%, #0a0a0a 70%, var(--sc-a));
   box-shadow:
-    0 0 0 1px rgba(255,255,255,0.08),
-    0 20px 50px rgba(0,0,0,0.45),
-    0 0 40px color-mix(in srgb, var(--pc-from, #22d3ee) 35%, transparent);
-  animation: pcard-in 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+    0 0 0 1px rgba(255,255,255,0.12),
+    0 18px 40px rgba(0,0,0,0.55),
+    0 0 48px color-mix(in srgb, var(--sc-a) 28%, transparent);
 }
-.pcard--compact { max-width: 280px; }
-.pcard__glow {
+
+.scard__chrome {
   position: absolute;
-  inset: -20%;
-  background: radial-gradient(circle at 50% 20%, color-mix(in srgb, var(--pc-from) 40%, transparent), transparent 55%);
+  inset: 0;
+  border-radius: 18px;
   pointer-events: none;
-  z-index: 0;
-  animation: pcard-pulse 2.8s ease-in-out infinite;
+  background:
+    linear-gradient(120deg, transparent 30%, rgba(255,255,255,0.22) 48%, transparent 62%);
+  mix-blend-mode: screen;
+  opacity: 0.55;
+  animation: scard-shine 3.2s ease-in-out infinite;
 }
-.pcard__inner {
+
+.scard__body {
   position: relative;
   z-index: 1;
-  border-radius: 26px;
-  background:
-    radial-gradient(ellipse at 50% 0%, rgba(255,255,255,0.08), transparent 50%),
-    linear-gradient(180deg, #0b1220 0%, #020617 100%);
-  padding: 1.1rem 1.15rem 1.25rem;
-  color: #f8fafc;
+  border-radius: 15px;
   overflow: hidden;
+  background:
+    radial-gradient(ellipse at 20% 0%, color-mix(in srgb, var(--sc-a) 35%, transparent), transparent 50%),
+    radial-gradient(ellipse at 100% 100%, color-mix(in srgb, var(--sc-b) 40%, transparent), transparent 45%),
+    linear-gradient(165deg, #0c1220 0%, var(--sc-c) 55%, #000 100%);
+  color: #fff;
+  padding-bottom: 0.85rem;
 }
-.pcard__stripe {
+
+/* Team / auction banner */
+.scard__banner {
+  display: flex;
+  align-items: stretch;
+  min-height: 36px;
+  background: linear-gradient(90deg, var(--sc-b), var(--sc-a));
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 12% 100%, 0 72%);
+  position: relative;
+}
+.scard__banner-text {
+  flex: 1;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-  margin-bottom: 0.85rem;
-}
-.pcard__role-chip {
+  padding: 0.45rem 0.75rem 0.45rem 0.9rem;
   font-size: 11px;
   font-weight: 800;
   letter-spacing: 0.14em;
-  padding: 0.28rem 0.65rem;
-  border-radius: 999px;
-  background: linear-gradient(135deg, var(--pc-from), var(--pc-to));
-  color: #0f172a;
-  box-shadow: 0 0 16px color-mix(in srgb, var(--pc-from) 50%, transparent);
-}
-.pcard__city {
-  font-size: 11px;
-  color: #94a3b8;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
-.pcard__photo-wrap {
-  position: relative;
-  width: 148px;
-  height: 148px;
-  margin: 0 auto 0.9rem;
-}
-.pcard--compact .pcard__photo-wrap { width: 112px; height: 112px; }
-.pcard__photo {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  border-radius: 22px;
-  display: block;
-  background: #1e293b;
-}
-.pcard__photo--placeholder {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 3rem;
-  background: linear-gradient(145deg, #1e293b, #0f172a);
-}
-.pcard__photo-ring {
-  position: absolute;
-  inset: -5px;
-  border-radius: 26px;
-  border: 2px solid transparent;
-  background: linear-gradient(135deg, var(--pc-from), transparent 40%, var(--pc-to)) border-box;
-  -webkit-mask: linear-gradient(#fff 0 0) padding-box, linear-gradient(#fff 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  pointer-events: none;
-  animation: pcard-ring 2.2s linear infinite;
-}
-.pcard__name {
-  text-align: center;
-  font-size: 1.45rem;
-  font-weight: 800;
-  letter-spacing: -0.02em;
-  line-height: 1.15;
-  text-shadow: 0 2px 12px rgba(0,0,0,0.5);
-}
-.pcard--compact .pcard__name { font-size: 1.2rem; }
-.pcard__meta {
-  text-align: center;
-  margin-top: 0.35rem;
-  font-size: 12px;
-  color: #94a3b8;
-  display: flex;
-  justify-content: center;
-  gap: 0.35rem;
-}
-.pcard__styles {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 0.35rem;
-  margin-top: 0.55rem;
-}
-.pcard__styles span,
-.pcard__tags span {
-  font-size: 10px;
-  padding: 0.2rem 0.5rem;
-  border-radius: 999px;
-  background: rgba(255,255,255,0.06);
-  border: 1px solid rgba(255,255,255,0.08);
-  color: #cbd5e1;
-}
-.pcard__tags {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 0.3rem;
-  margin-top: 0.45rem;
-}
-.pcard__footer {
-  margin-top: 1rem;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.55rem;
-}
-.pcard__base,
-.pcard__bid {
-  border-radius: 14px;
-  padding: 0.55rem 0.65rem;
-  background: rgba(15, 23, 42, 0.85);
-  border: 1px solid rgba(255,255,255,0.06);
-  text-align: center;
-}
-.pcard__bid {
-  background: linear-gradient(180deg, rgba(251, 191, 36, 0.12), rgba(15,23,42,0.9));
-  border-color: rgba(251, 191, 36, 0.25);
-}
-.pcard__bid--sold {
-  background: linear-gradient(180deg, rgba(52, 211, 153, 0.15), rgba(15,23,42,0.9));
-  border-color: rgba(52, 211, 153, 0.3);
-}
-.pcard__bid--unsold {
-  background: linear-gradient(180deg, rgba(251, 191, 36, 0.1), rgba(15,23,42,0.9));
-}
-.pcard__label {
-  display: block;
-  font-size: 9px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: #64748b;
-  font-weight: 700;
-}
-.pcard__value {
-  display: block;
-  margin-top: 0.15rem;
-  font-size: 1.05rem;
-  font-weight: 800;
-  font-variant-numeric: tabular-nums;
-}
-.pcard__value--bid {
-  color: #fbbf24;
-  text-shadow: 0 0 18px rgba(251, 191, 36, 0.35);
-}
-.pcard__lead {
-  display: block;
-  margin-top: 0.15rem;
-  font-size: 11px;
-  color: #94a3b8;
+  color: #0a0a0a;
+  text-shadow: 0 1px 0 rgba(255,255,255,0.25);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-@keyframes pcard-in {
-  from { opacity: 0; transform: translateY(18px) scale(0.94); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
+.scard__jersey {
+  min-width: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  font-weight: 900;
+  font-style: italic;
+  background: #0a0a0a;
+  color: var(--sc-a);
+  padding: 0 0.55rem;
+  clip-path: polygon(18% 0, 100% 0, 100% 100%, 0 100%);
+  letter-spacing: -0.02em;
 }
-@keyframes pcard-pulse {
-  0%, 100% { opacity: 0.55; }
-  50% { opacity: 1; }
+
+/* Photo stage */
+.scard__photo-stage {
+  position: relative;
+  margin: 0.65rem 0.75rem 0.4rem;
+  aspect-ratio: 3 / 3.4;
+  border-radius: 10px;
+  overflow: hidden;
+  background:
+    repeating-linear-gradient(
+      -45deg,
+      #1a1a1a,
+      #1a1a1a 8px,
+      #222 8px,
+      #222 16px
+    );
+  border: 2px solid color-mix(in srgb, var(--sc-a) 55%, #fff);
+  box-shadow: inset 0 0 30px rgba(0,0,0,0.45);
 }
-@keyframes pcard-ring {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+.scard__photo-cut {
+  position: absolute;
+  inset: 0;
+  clip-path: polygon(0 8%, 8% 0, 100% 0, 100% 92%, 92% 100%, 0 100%);
+}
+.scard__photo {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  filter: contrast(1.05) saturate(1.08);
+}
+.scard__photo--empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 4rem;
+  background: linear-gradient(160deg, #1e293b, #0f172a);
+  color: color-mix(in srgb, var(--sc-a) 70%, #fff);
+}
+.scard__geo {
+  position: absolute;
+  width: 28px;
+  height: 28px;
+  z-index: 2;
+  pointer-events: none;
+}
+.scard__geo--tl {
+  top: 0; left: 0;
+  background: linear-gradient(135deg, var(--sc-a), transparent 70%);
+  clip-path: polygon(0 0, 100% 0, 0 100%);
+}
+.scard__geo--br {
+  bottom: 0; right: 0;
+  background: linear-gradient(-45deg, var(--sc-b), transparent 70%);
+  clip-path: polygon(100% 0, 100% 100%, 0 100%);
+}
+.scard__role-tag {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  z-index: 3;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  padding: 0.28rem 0.55rem;
+  border-radius: 4px;
+  background: rgba(0,0,0,0.72);
+  border: 1px solid color-mix(in srgb, var(--sc-a) 60%, transparent);
+  color: var(--sc-a);
+  backdrop-filter: blur(6px);
+}
+
+/* Stars */
+.scard__stars {
+  display: flex;
+  justify-content: center;
+  gap: 0.15rem;
+  margin: 0.35rem 0 0.25rem;
+  font-size: 13px;
+  line-height: 1;
+}
+.scard__stars span { color: rgba(255,255,255,0.2); }
+.scard__stars span.on {
+  color: #fbbf24;
+  text-shadow: 0 0 10px rgba(251, 191, 36, 0.55);
+}
+
+/* Name */
+.scard__nameplate {
+  text-align: center;
+  padding: 0 0.75rem;
+}
+.scard__name {
+  font-size: 1.35rem;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  text-transform: uppercase;
+  background: linear-gradient(180deg, #fff 30%, color-mix(in srgb, var(--sc-a) 80%, #fff));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));
+}
+.scard--compact .scard__name { font-size: 1.1rem; }
+.scard__sub {
+  margin-top: 0.2rem;
+  font-size: 11px;
+  color: rgba(255,255,255,0.55);
+  letter-spacing: 0.04em;
+}
+
+.scard__chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.3rem;
+  margin: 0.5rem 0.75rem 0;
+}
+.scard__chips span {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0.2rem 0.45rem;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.1);
+  color: rgba(255,255,255,0.75);
+}
+
+/* Prices */
+.scard__prices {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.4rem;
+  margin: 0.75rem 0.75rem 0;
+}
+.scard__price-cell {
+  border-radius: 10px;
+  padding: 0.5rem 0.45rem;
+  text-align: center;
+  background: rgba(0,0,0,0.45);
+  border: 1px solid rgba(255,255,255,0.08);
+}
+.scard__price-cell--bid {
+  border-color: color-mix(in srgb, #fbbf24 50%, transparent);
+  background: linear-gradient(180deg, rgba(251,191,36,0.18), rgba(0,0,0,0.5));
+}
+.scard__price-cell--sold {
+  border-color: color-mix(in srgb, #34d399 55%, transparent);
+  background: linear-gradient(180deg, rgba(52,211,153,0.2), rgba(0,0,0,0.5));
+}
+.scard__price-cell--unsold {
+  border-color: color-mix(in srgb, #f59e0b 45%, transparent);
+}
+.scard__price-label {
+  display: block;
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  color: rgba(255,255,255,0.45);
+}
+.scard__price-val {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 1rem;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  color: #fff;
+}
+.scard__price-cell--bid .scard__price-val { color: #fbbf24; }
+.scard__price-cell--sold .scard__price-val { color: #34d399; }
+.scard__price-team {
+  display: block;
+  margin-top: 0.1rem;
+  font-size: 10px;
+  color: rgba(255,255,255,0.55);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.scard--sold .scard__frame {
+  box-shadow:
+    0 0 0 1px rgba(52,211,153,0.35),
+    0 18px 40px rgba(0,0,0,0.55),
+    0 0 40px rgba(52,211,153,0.25);
+}
+.scard--unsold .scard__frame {
+  filter: grayscale(0.25);
+  opacity: 0.92;
+}
+
+@keyframes scard-enter {
+  from { opacity: 0; transform: translateY(22px) rotateX(8deg) scale(0.94); }
+  to { opacity: 1; transform: translateY(0) rotateX(0) scale(1); }
+}
+@keyframes scard-shine {
+  0%, 100% { opacity: 0.25; transform: translateX(-30%); }
+  50% { opacity: 0.65; transform: translateX(30%); }
 }
