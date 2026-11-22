@@ -58,7 +58,6 @@ export default function AppShell({
     if (item.developerOnly && !isDeveloper) return false;
     if (item.adminOnly && !isStaff) return false;
     if (!item.feature) return true;
-    // Missing key = enabled by default; only hide when explicitly false
     if (features[item.feature] === false) return false;
     return true;
   });
@@ -77,18 +76,16 @@ export default function AppShell({
   return (
     <div className="page-mesh" style={{ color: 'var(--text)' }}>
       <header className="glass-nav">
-        <div className="max-w-6xl mx-auto px-4 sm:px-5 py-2.5 flex flex-wrap items-center justify-between gap-2">
+        <div className="max-w-6xl mx-auto px-4 sm:px-5 py-3 flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-3 min-w-0">
-            <Link to="/" className="flex items-center gap-2 font-semibold text-[17px] tracking-tight shrink-0" style={{ color: 'var(--text)' }}>
-              <span className="text-[20px] leading-none">🏏</span>
+            <Link to="/" className="as-brand shrink-0">
+              <span className="as-brand-mark" aria-hidden>🏏</span>
               <span className="hidden sm:inline">AuctionScore</span>
             </Link>
             {title && (
-              <div className="hidden md:block pl-3 min-w-0" style={{ borderLeft: '0.5px solid var(--separator)' }}>
-                <div className="font-semibold text-[15px] truncate" style={{ color: 'var(--text)' }}>{title}</div>
-                {subtitle && (
-                  <div className="text-[12px] truncate" style={{ color: 'var(--text-2)' }}>{subtitle}</div>
-                )}
+              <div className="hidden md:block pl-3 min-w-0" style={{ borderLeft: '1px solid var(--separator)' }}>
+                <div className="as-page-title truncate">{title}</div>
+                {subtitle && <div className="as-page-sub truncate">{subtitle}</div>}
               </div>
             )}
           </div>
@@ -100,48 +97,32 @@ export default function AppShell({
                   href={(item as any).href}
                   target="_blank"
                   rel="noreferrer"
-                  className="text-[13px] px-2.5 py-1 rounded-full transition"
-                  style={{ color: 'var(--text-2)' }}
+                  className="as-nav-link"
                 >
                   {item.label}
                 </a>
               ) : (
-                <Link
-                  key={item.label}
-                  to={item.to!}
-                  className="text-[13px] px-2.5 py-1 rounded-full transition"
-                  style={{ color: 'var(--text-2)' }}
-                >
+                <Link key={item.label} to={item.to!} className="as-nav-link">
                   {item.label}
                 </Link>
               )
             )}
             <ThemeToggle />
             {user && (
-              <button
-                type="button"
-                onClick={logout}
-                className="text-[13px] px-2.5 py-1 rounded-full"
-                style={{ color: 'var(--text-2)' }}
-              >
+              <button type="button" onClick={logout} className="as-nav-link">
                 Logout
               </button>
             )}
           </div>
         </div>
-        <nav className="max-w-6xl mx-auto px-4 sm:px-5 pb-2.5 flex gap-1 overflow-x-auto">
+        <nav className="as-shell-nav max-w-6xl mx-auto px-4 sm:px-5 pb-3 flex gap-1 overflow-x-auto">
           {nav.map(item => {
-            const active = loc.pathname === item.to;
+            const active = loc.pathname === item.to || (item.to !== '/' && loc.pathname.startsWith(item.to));
             return (
               <Link
                 key={item.to}
                 to={item.to}
-                className="px-3.5 py-1.5 rounded-full text-[13px] whitespace-nowrap font-medium transition"
-                style={
-                  active
-                    ? { background: 'var(--accent)', color: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,0.15)' }
-                    : { color: 'var(--text-2)' }
-                }
+                className={`as-nav-link${active ? ' is-active' : ''}`}
               >
                 {item.label}
               </Link>
