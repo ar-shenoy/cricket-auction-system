@@ -63,11 +63,11 @@ export default function AppShell({
   });
 
   const topLinks = [
-    { to: '/live', label: 'Live view', feature: 'auction' },
-    { href: '/scoreboard', label: 'Projector', feature: 'scoreboard' },
+    { to: '/live', label: 'Live', feature: 'auction' },
+    { href: '/scoreboard', label: 'Board', feature: 'scoreboard' },
     { to: '/points', label: 'Points', feature: 'points' },
     { href: '/match-live', label: 'Match', feature: 'scoreboard' },
-    { href: '/tournament', label: 'Tournament', feature: null }
+    { href: '/tournament', label: 'Cup', feature: null }
   ].filter(item => {
     if (!item.feature) return true;
     return features[item.feature] !== false;
@@ -81,21 +81,21 @@ export default function AppShell({
   return (
     <div className="page-mesh" style={{ color: 'var(--text)' }}>
       <header className="glass-nav">
-        <div className="max-w-6xl mx-auto px-4 sm:px-5 py-3 flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-3 min-w-0">
+        <div className="max-w-6xl mx-auto px-3 sm:px-5 py-2.5 sm:py-3 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
             <Link to="/" className="as-brand shrink-0">
               <span className="as-brand-mark" aria-hidden>🏏</span>
-              <span className="hidden sm:inline">Auction Admin</span>
+              <span className="hidden xs:inline sm:inline">Auction Admin</span>
             </Link>
             <span className="as-chip as-chip--live">{roleLabel}</span>
             {title && (
-              <div className="hidden md:block pl-3 min-w-0" style={{ borderLeft: '1px solid var(--separator)' }}>
+              <div className="hidden lg:block pl-3 min-w-0" style={{ borderLeft: '1px solid var(--separator)' }}>
                 <div className="as-page-title truncate">{title}</div>
                 {subtitle && <div className="as-page-sub truncate">{subtitle}</div>}
               </div>
             )}
           </div>
-          <div className="flex items-center gap-1 flex-wrap justify-end">
+          <div className="flex items-center gap-0.5 sm:gap-1 flex-wrap justify-end">
             {topLinks.map(item =>
               (item as any).href ? (
                 <a
@@ -103,25 +103,27 @@ export default function AppShell({
                   href={(item as any).href}
                   target="_blank"
                   rel="noreferrer"
-                  className="as-nav-link"
+                  className="as-nav-link hidden sm:inline-flex"
                 >
                   {item.label}
                 </a>
               ) : (
-                <Link key={item.label} to={item.to!} className="as-nav-link">
+                <Link key={item.label} to={item.to!} className="as-nav-link hidden sm:inline-flex">
                   {item.label}
                 </Link>
               )
             )}
+            {/* Mobile quick live link */}
+            <Link to="/live" className="as-nav-link sm:hidden">Live</Link>
             <ThemeToggle />
             {user && (
               <button type="button" onClick={logout} className="as-nav-link">
-                Sign out
+                Out
               </button>
             )}
           </div>
         </div>
-        <nav className="as-shell-nav max-w-6xl mx-auto px-4 sm:px-5 pb-3 flex gap-1 overflow-x-auto">
+        <nav className="as-shell-nav max-w-6xl mx-auto px-3 sm:px-5 pb-2.5 sm:pb-3 flex gap-1 overflow-x-auto">
           {nav.map(item => {
             const active = loc.pathname === item.to || (item.to !== '/' && loc.pathname.startsWith(item.to));
             return (
@@ -137,11 +139,19 @@ export default function AppShell({
         </nav>
       </header>
 
-      {actions && (
-        <div className="max-w-6xl mx-auto px-4 sm:px-5 pt-4 flex justify-end gap-2">{actions}</div>
+      {/* Mobile page title */}
+      {title && (
+        <div className="lg:hidden max-w-6xl mx-auto px-3 sm:px-5 pt-3">
+          <div className="as-page-title">{title}</div>
+          {subtitle && <div className="as-page-sub">{subtitle}</div>}
+        </div>
       )}
 
-      <main className="max-w-6xl mx-auto px-4 sm:px-5 py-6 sm:py-8">{children}</main>
+      {actions && (
+        <div className="max-w-6xl mx-auto px-3 sm:px-5 pt-3 sm:pt-4 flex flex-wrap justify-end gap-2">{actions}</div>
+      )}
+
+      <main className="max-w-6xl mx-auto px-3 sm:px-5 py-4 sm:py-6 md:py-8">{children}</main>
     </div>
   );
 }

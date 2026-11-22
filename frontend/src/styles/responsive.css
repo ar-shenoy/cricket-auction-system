@@ -1,0 +1,243 @@
+/* ═══════════════════════════════════════════════
+   Responsive · phone → tablet → laptop → TV
+   ═══════════════════════════════════════════════ */
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  overflow-x: hidden;
+}
+
+#root {
+  min-height: 100dvh;
+  min-height: 100vh;
+}
+
+/* Safe areas (notch / home indicator) */
+.glass-nav {
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+}
+
+main {
+  padding-bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px));
+}
+
+/* Touch-friendly defaults */
+@media (hover: none) and (pointer: coarse) {
+  .as-btn-primary,
+  .as-btn-ghost {
+    min-height: 44px;
+    padding-left: 1.1rem;
+    padding-right: 1.1rem;
+  }
+  .as-nav-link {
+    min-height: 40px;
+    padding: 0.55rem 0.9rem;
+  }
+  .as-input,
+  input.as-input,
+  select.as-input,
+  textarea.as-input {
+    min-height: 44px;
+    font-size: 16px; /* prevents iOS zoom on focus */
+  }
+  .glass:hover {
+    transform: none;
+    box-shadow: var(--shadow-glass);
+    border-color: rgba(255, 255, 255, 0.07);
+  }
+  .glass:hover::after {
+    opacity: 0;
+  }
+  .glass-row:hover {
+    padding-left: 1rem;
+  }
+}
+
+/* ── Phone (≤640px) ── */
+@media (max-width: 640px) {
+  .page-mesh {
+    background-attachment: scroll;
+  }
+
+  .glass-nav .max-w-6xl {
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
+  }
+
+  .as-shell-nav {
+    gap: 0.25rem;
+    padding-bottom: 0.65rem !important;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .as-shell-nav::-webkit-scrollbar {
+    display: none;
+  }
+
+  .as-nav-link {
+    font-size: 11px;
+    padding: 0.5rem 0.7rem;
+  }
+
+  .as-brand {
+    font-size: 12px;
+    letter-spacing: 0.06em;
+  }
+  .as-brand-mark {
+    width: 28px;
+    height: 28px;
+  }
+
+  main.max-w-6xl,
+  .max-w-6xl {
+    padding-left: 0.75rem !important;
+    padding-right: 0.75rem !important;
+  }
+
+  main {
+    padding-top: 1rem !important;
+    padding-bottom: calc(1.25rem + env(safe-area-inset-bottom, 0px)) !important;
+  }
+
+  .glass,
+  .glass-strong,
+  .glass-thick {
+    border-radius: 12px;
+  }
+
+  .glass::before {
+    width: 2px;
+    top: 8%;
+    bottom: 8%;
+  }
+
+  .as-btn-primary,
+  .as-btn-ghost {
+    width: 100%;
+    justify-content: center;
+  }
+
+  /* Stack common action rows */
+  .flex.flex-wrap.gap-2 {
+    width: 100%;
+  }
+
+  .glass table {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .scard,
+  .pcard {
+    max-width: 100% !important;
+  }
+}
+
+/* ── Small phone (≤380px) ── */
+@media (max-width: 380px) {
+  .as-nav-link {
+    font-size: 10.5px;
+    padding: 0.45rem 0.55rem;
+  }
+  h1 {
+    font-size: clamp(1.75rem, 9vw, 2.5rem) !important;
+  }
+}
+
+/* ── Tablet ── */
+@media (min-width: 641px) and (max-width: 1024px) {
+  main.max-w-6xl {
+    max-width: 100%;
+    padding-left: 1.25rem !important;
+    padding-right: 1.25rem !important;
+  }
+
+  .as-btn-primary,
+  .as-btn-ghost {
+    min-height: 42px;
+  }
+}
+
+/* ── Laptop+ ── */
+@media (min-width: 1025px) {
+  main.max-w-6xl {
+    max-width: 72rem;
+  }
+}
+
+/* ── Wide / TV / projector (≥1440px) ── */
+@media (min-width: 1440px) {
+  :root {
+    font-size: 17px;
+  }
+
+  main.max-w-6xl,
+  .glass-nav .max-w-6xl {
+    max-width: 90rem;
+  }
+
+  .as-nav-link {
+    font-size: 13px;
+    padding: 0.5rem 1rem;
+  }
+
+  .as-btn-primary {
+    font-size: 13.5px;
+    padding: 0.85rem 1.5rem;
+  }
+
+  .scard,
+  .pcard {
+    max-width: 380px !important;
+  }
+}
+
+/* ── Ultra-wide TV / 4K projector ── */
+@media (min-width: 1920px) {
+  :root {
+    font-size: 18px;
+  }
+
+  main.max-w-6xl,
+  .glass-nav .max-w-6xl {
+    max-width: 100rem;
+  }
+
+  .as-brand {
+    font-size: 15px;
+  }
+}
+
+/* Landscape phones — compact header */
+@media (max-height: 480px) and (orientation: landscape) {
+  .glass-nav {
+    position: relative;
+  }
+  main {
+    padding-top: 0.75rem !important;
+  }
+}
+
+/* Focus mode / projector helper class (toggle from auction) */
+body.as-focus-mode .glass-nav,
+body.as-focus-mode .as-shell-nav {
+  display: none !important;
+}
+body.as-focus-mode main {
+  max-width: 100% !important;
+  padding: 1rem !important;
+}
+
+/* Embed already strips chrome; ensure full bleed */
+body.as-embed main {
+  max-width: 100% !important;
+  margin: 0 !important;
+  padding: 0.5rem !important;
+}
