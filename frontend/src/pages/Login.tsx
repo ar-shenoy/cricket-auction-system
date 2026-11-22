@@ -131,7 +131,7 @@ export default function Login() {
                 <input
                   type="password"
                   name="password"
-ajaComplete="current-password"
+                  autoComplete="current-password"
                   value={password}
                   onChange={e => setPassword(e.target.value)}
                   className="as-input"
