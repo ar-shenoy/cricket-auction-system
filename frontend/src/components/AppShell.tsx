@@ -4,18 +4,29 @@ import { useAuth } from '../context/AuthContext';
 import ThemeToggle from './ThemeToggle';
 import api from '../services/api';
 
-const ALL_NAV = [
+type NavItem = {
+  to: string;
+  label: string;
+  feature: string | null;
+  adminOnly?: boolean;
+  developerOnly?: boolean;
+};
+
+const ALL_NAV: NavItem[] = [
   { to: '/', label: 'Home', feature: null },
   { to: '/players', label: 'Players', feature: 'players', adminOnly: true },
   { to: '/teams', label: 'Teams', feature: 'teams' },
   { to: '/auction', label: 'Auction', feature: 'auction' },
   { to: '/scoring', label: 'Scoring', feature: 'scoring', adminOnly: true },
+  { to: '/hub', label: 'Hub', feature: 'hub', adminOnly: true },
+  { to: '/broadcast', label: 'Broadcast', feature: 'broadcast', adminOnly: true },
+  { to: '/franchise', label: 'Franchise', feature: 'franchise' },
   { to: '/reports', label: 'Reports', feature: 'reports', adminOnly: true },
-  { to: '/intelligence', label: 'Intel', feature: null, adminOnly: true },
-  { to: '/audit', label: 'Audit', feature: null, adminOnly: true },
-  { to: '/health', label: 'Health', feature: null, adminOnly: true },
+  { to: '/intelligence', label: 'Intel', feature: 'intelligence', adminOnly: true },
   { to: '/billing', label: 'Billing', feature: 'billing', adminOnly: true },
-  { to: '/features', label: 'Features', feature: null, adminOnly: true }
+  { to: '/features', label: 'Features', feature: null, developerOnly: true },
+  { to: '/audit', label: 'Audit', feature: null, developerOnly: true },
+  { to: '/health', label: 'Health', feature: null, developerOnly: true }
 ];
 
 export default function AppShell({
@@ -39,10 +50,15 @@ export default function AppShell({
       .catch(() => {});
   }, [loc.pathname]);
 
-  const isStaff = user?.role === 'admin' || user?.role === 'developer';
+  const isAdmin = user?.role === 'admin';
+  const isDeveloper = user?.role === 'developer';
+  const isStaff = isAdmin || isDeveloper;
+
   const nav = ALL_NAV.filter(item => {
-    if ((item as any).adminOnly && !isStaff) return false;
+    if (item.developerOnly && !isDeveloper) return false;
+    if (item.adminOnly && !isStaff) return false;
     if (!item.feature) return true;
+    // Missing key = enabled by default; only hide when explicitly false
     if (features[item.feature] === false) return false;
     return true;
   });
@@ -50,8 +66,13 @@ export default function AppShell({
   const topLinks = [
     { to: '/live', label: 'Live', feature: 'auction' },
     { href: '/scoreboard', label: 'Board', feature: 'scoreboard' },
-    { to: '/points', label: 'Points', feature: 'points' }
-  ].filter(item => features[item.feature as string] !== false);
+    { to: '/points', label: 'Points', feature: 'points' },
+    { href: '/match-live', label: 'Match', feature: 'scoreboard' },
+    { href: '/tournament', label: 'Tournament', feature: null }
+  ].filter(item => {
+    if (!item.feature) return true;
+    return features[item.feature] !== false;
+  });
 
   return (
     <div className="page-mesh" style={{ color: 'var(--text)' }}>
@@ -59,11 +80,11 @@ export default function AppShell({
         <div className="max-w-6xl mx-auto px-4 sm:px-5 py-2.5 flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-3 min-w-0">
             <Link to="/" className="flex items-center gap-2 font-semibold text-[17px] tracking-tight shrink-0" style={{ color: 'var(--text)' }}>
-              <span className="text-[20px]">🏏</span>
+              <span className="text-[20px] leading-none">🏏</span>
               <span className="hidden sm:inline">AuctionScore</span>
             </Link>
             {title && (
-              <div className="min-w-0 border-l pl-3" style={{ borderColor: 'var(--border)' }}>
+              <div className="hidden md:block pl-3 min-w-0" style={{ borderLeft: '0.5px solid var(--separator)' }}>
                 <div className="font-semibold text-[15px] truncate" style={{ color: 'var(--text)' }}>{title}</div>
                 {subtitle && (
                   <div className="text-[12px] truncate" style={{ color: 'var(--text-2)' }}>{subtitle}</div>
@@ -74,18 +95,35 @@ export default function AppShell({
           <div className="flex items-center gap-1 flex-wrap justify-end">
             {topLinks.map(item =>
               (item as any).href ? (
-                <a key={item.label} href={(item as any).href} target="_blank" rel="noreferrer" className="text-[13px] px-2.5 py-1 rounded-full transition" style={{ color: 'var(--text-2)' }}>
+                <a
+                  key={item.label}
+                  href={(item as any).href}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-[13px] px-2.5 py-1 rounded-full transition"
+                  style={{ color: 'var(--text-2)' }}
+                >
                   {item.label}
                 </a>
               ) : (
-                <Link key={item.label} to={item.to!} className="text-[13px] px-2.5 py-1 rounded-full transition" style={{ color: 'var(--text-2)' }}>
+                <Link
+                  key={item.label}
+                  to={item.to!}
+                  className="text-[13px] px-2.5 py-1 rounded-full transition"
+                  style={{ color: 'var(--text-2)' }}
+                >
                   {item.label}
                 </Link>
               )
             )}
             <ThemeToggle />
             {user && (
-              <button type="button" onClick={logout} className="text-[13px] px-2.5 py-1 rounded-full" style={{ color: 'var(--text-2)' }}>
+              <button
+                type="button"
+                onClick={logout}
+                className="text-[13px] px-2.5 py-1 rounded-full"
+                style={{ color: 'var(--text-2)' }}
+              >
                 Logout
               </button>
             )}
