@@ -15,7 +15,8 @@ const {
   getMatches,
   getAuctions,
   getSoldPlayers,
-  getBids
+  getBids,
+  DEFAULT_ORG_ID
 } = require('../data/store');
 const { authMiddleware, requireRole, JWT_SECRET } = require('../middleware/auth');
 const { tenantMiddleware } = require('../middleware/tenant');
@@ -42,34 +43,32 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({ error: 'orgName, name, email, password required' });
     }
     if (password.length < 6) {
-      return res.status(400).json({ error: 'Password min 6 characters' });
+      return res.status(400).json({ error: 'Password must be at least 6 characters' });
     }
     const users = getAllUsers();
     if (users.find(u => u.email.toLowerCase() === email.toLowerCase())) {
       return res.status(400).json({ error: 'Email already registered' });
     }
-
     let slug = slugify(orgName);
-    let n = 0;
-    while (getOrgBySlug(slug)) {
-      n += 1;
-      slug = `${slugify(orgName)}-${n}`;
-    }
+    const orgs = getOrganizations();
+    if (orgs.find(o => o.slug === slug)) slug = `${slug}-${Date.now().toString(36).slice(-4)}`;
 
     const org = addOrganization({
       id: uuidv4(),
-      name: String(orgName).trim().slice(0, 80),
+      name: orgName,
       slug,
       plan: 'free',
       planExpiresAt: null,
+      razorpaySubId: null,
+      features: null,
       createdAt: new Date().toISOString()
     });
 
     const hashed = await bcrypt.hash(password, 10);
     const user = addUser({
       id: uuidv4(),
-      name: String(name).trim(),
-      email: email.toLowerCase().trim(),
+      name,
+      email: email.toLowerCase(),
       password: hashed,
       role: 'admin',
       teamId: null,
@@ -77,29 +76,15 @@ router.post('/register', async (req, res) => {
     });
 
     const token = jwt.sign(
-      {
-        id: user.id,
-        email: user.email,
-        role: user.role,
-        teamId: null,
-        name: user.name,
-        orgId: org.id
-      },
+      { id: user.id, email: user.email, role: user.role, teamId: null, name: user.name, orgId: org.id },
       JWT_SECRET,
       { expiresIn: '7d' }
     );
 
     res.status(201).json({
       token,
-      user: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        teamId: null,
-        orgId: org.id
-      },
-      org: publicOrg(org)
+      user: { id: user.id, name: user.name, email: user.email, role: user.role, teamId: null, orgId: org.id },
+      organization: { id: org.id, name: org.name, slug: org.slug, plan: org.plan }
     });
   } catch (err) {
     console.error(err);
@@ -107,69 +92,48 @@ router.post('/register', async (req, res) => {
   }
 });
 
-function publicOrg(org) {
-  if (!org) return null;
-  const plan = getPlan(org.plan);
-  return {
-    id: org.id,
-    name: org.name,
-    slug: org.slug,
-    plan: org.plan || 'free',
-    planExpiresAt: org.planExpiresAt || null,
-    limits: plan.limits,
-    planName: plan.name,
-    features: getFeatures(org),
-    soldWebhookUrl: org.soldWebhookUrl || ''
-  };
-}
-
 router.get('/me', authMiddleware, tenantMiddleware, (req, res) => {
-  const teams = getTeams(req.orgId).length;
-  const players = getPlayers(req.orgId).length;
-  const matches = getMatches(req.orgId).length;
-  const auctions = getAuctions(req.orgId).length;
+  const org = req.org || getOrgById(req.user?.orgId) || getOrgById(DEFAULT_ORG_ID);
   res.json({
-    ...publicOrg(req.org),
-    usage: { teams, players, matches, auctions }
+    id: org?.id,
+    name: org?.name,
+    slug: org?.slug,
+    plan: org?.plan || 'free',
+    planExpiresAt: org?.planExpiresAt || null,
+    soldWebhookUrl: org?.soldWebhookUrl || '',
+    features: getFeatures(org),
+    limits: getPlan(org?.plan || 'free').limits
   });
 });
 
-router.patch('/me', authMiddleware, requireRole('admin'), tenantMiddleware, (req, res) => {
-  const { name, soldWebhookUrl } = req.body;
+router.patch('/me', authMiddleware, requireRole('admin', 'developer'), tenantMiddleware, (req, res) => {
+  const orgId = req.orgId || req.headers['x-org-id'] || DEFAULT_ORG_ID;
   const updates = {};
-  if (name) updates.name = String(name).trim().slice(0, 80);
-  if (soldWebhookUrl !== undefined) {
-    const u = String(soldWebhookUrl || '').trim();
-    if (u && !/^https?:\/\//i.test(u)) {
-      return res.status(400).json({ error: 'soldWebhookUrl must be http(s)' });
-    }
-    updates.soldWebhookUrl = u.slice(0, 500);
-  }
-  const updated = updateOrganization(req.orgId, updates);
-  res.json(publicOrg(updated));
-});
-
-router.get('/public/:slug', (req, res) => {
-  const org = getOrgBySlug(req.params.slug);
-  if (!org) return res.status(404).json({ error: 'Not found' });
-  res.json({
-    name: org.name,
-    slug: org.slug,
-    plan: org.plan || 'free'
-  });
+  if (typeof req.body?.soldWebhookUrl === 'string') updates.soldWebhookUrl = req.body.soldWebhookUrl.trim();
+  if (typeof req.body?.name === 'string' && req.body.name.trim()) updates.name = req.body.name.trim();
+  const updated = updateOrganization(orgId, updates);
+  res.json({ organization: updated, message: 'Organization updated' });
 });
 
 router.get('/features', authMiddleware, tenantMiddleware, (req, res) => {
-  res.json({ features: getFeatures(req.org), defaults: DEFAULT_FEATURES });
+  const org = req.org || getOrgById(req.user?.orgId) || getOrgById(DEFAULT_ORG_ID);
+  res.json({ features: getFeatures(org), defaults: DEFAULT_FEATURES });
 });
 
-router.put('/features', authMiddleware, requireRole('admin'), tenantMiddleware, (req, res) => {
+router.put('/features', authMiddleware, requireRole('admin', 'developer'), tenantMiddleware, (req, res) => {
   const incoming = req.body?.features && typeof req.body.features === 'object' ? req.body.features : {};
-  const merged = { ...getFeatures(req.org) };
+  // Developer with global scope writes to default org (or x-org-id target)
+  const orgId = req.orgId || req.headers['x-org-id'] || DEFAULT_ORG_ID;
+  const org = req.org || getOrgById(orgId) || getOrgById(DEFAULT_ORG_ID);
+  const merged = { ...getFeatures(org) };
   Object.keys(DEFAULT_FEATURES).forEach(k => {
     if (typeof incoming[k] === 'boolean') merged[k] = incoming[k];
   });
-  const updated = updateOrganization(req.orgId, { features: merged });
+  // Forward-compat: accept any extra boolean keys developer sends
+  Object.keys(incoming).forEach(k => {
+    if (typeof incoming[k] === 'boolean') merged[k] = incoming[k];
+  });
+  const updated = updateOrganization(orgId, { features: merged });
   res.json({ features: getFeatures(updated), message: 'Features updated' });
 });
 
@@ -184,16 +148,17 @@ router.get('/public-features', (req, res) => {
   res.json({ features: getFeatures(org) });
 });
 
-router.get('/export', authMiddleware, tenantMiddleware, (req, res) => {
+/** Full org data dump for backup (admin or developer) */
+router.get('/export', authMiddleware, requireRole('admin', 'developer'), tenantMiddleware, (req, res) => {
+  const orgId = req.orgId || req.headers['x-org-id'] || DEFAULT_ORG_ID;
+  const org = getOrgById(orgId);
   const role = req.user?.role;
   if (role !== 'admin' && role !== 'developer') {
-    return res.status(403).json({ error: 'Admin only' });
+    return res.status(403).json({ error: 'Access denied' });
   }
-  const orgId = req.orgId;
-  const org = getOrgById(orgId) || req.org;
   const dump = {
     exportedAt: new Date().toISOString(),
-    org: org
+    organization: org
       ? {
           id: org.id,
           name: org.name,
@@ -205,12 +170,17 @@ router.get('/export', authMiddleware, tenantMiddleware, (req, res) => {
     teams: getTeams(orgId),
     players: getPlayers(orgId),
     auctions: getAuctions(orgId),
-    soldPlayers: typeof getSoldPlayers === 'function' ? getSoldPlayers(orgId) : [],
-    bids: typeof getBids === 'function' ? getBids(orgId) : [],
+    bids: getBids(orgId),
+    soldPlayers: getSoldPlayers(orgId),
     matches: getMatches(orgId)
   };
-  res.setHeader('Content-Disposition', `attachment; filename="auctionscore-org-${org?.slug || orgId || 'export'}.json"`);
-  res.json(dump);
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Content-Disposition', `attachment; filename="org-export-${orgId}.json"`);
+  res.send(JSON.stringify(dump, null, 2));
+});
+
+router.get('/', authMiddleware, requireRole('developer'), (req, res) => {
+  res.json(getOrganizations());
 });
 
 module.exports = router;
