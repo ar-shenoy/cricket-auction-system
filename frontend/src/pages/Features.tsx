@@ -10,6 +10,10 @@ const LABELS: Record<string, { title: string; desc: string }> = {
   scoring: { title: 'Scoring', desc: 'Match scoring panel and scoreboard feeds' },
   reports: { title: 'Reports', desc: 'Squad reports and export tools' },
   billing: { title: 'Billing', desc: 'Plan and payment screens' },
+  hub: { title: 'Tournament Hub', desc: 'Seasons, venues, fixtures, standings' },
+  broadcast: { title: 'Broadcast studio', desc: 'Lower-thirds, sponsors, OBS-style controls' },
+  franchise: { title: 'Franchise portal', desc: 'Team-owner view of own purse and squad' },
+  intelligence: { title: 'Intelligence', desc: 'Market values, spend efficiency, projections' },
   liveTeams: { title: 'Live · show teams', desc: 'Show team purse list on the public /live page' },
   points: { title: 'Points table', desc: 'Tournament points / NRR page' },
   scoreboard: { title: 'Scoreboard', desc: 'Projector scoreboard link' }
@@ -33,7 +37,13 @@ export default function Features() {
       api.get('/broadcast/settings').catch(() => ({ data: {} }))
     ])
       .then(([fr, me, br]) => {
-        setFeatures(fr.data.features || {});
+        const f = fr.data.features || {};
+        // Ensure new keys default ON so nav shows until developer turns them off
+        const merged: Record<string, boolean> = { ...f };
+        Object.keys(LABELS).forEach(k => {
+          if (merged[k] === undefined) merged[k] = true;
+        });
+        setFeatures(merged);
         if (me.data?.soldWebhookUrl) setWebhookUrl(me.data.soldWebhookUrl);
         if (br.data?.sponsorLogos) setSponsorUrls((br.data.sponsorLogos || []).map((s: any) => s.url).join('\n'));
         if (br.data?.sponsorRotateSeconds != null) setSponsorRotate(String(br.data.sponsorRotateSeconds));
@@ -76,16 +86,18 @@ export default function Features() {
     }
   };
 
-  if (user?.role !== 'admin' && user?.role !== 'developer') {
+  if (user?.role !== 'developer') {
     return (
       <AppShell title="Features">
-        <div className="glass p-8 text-center" style={{ color: 'var(--text-2)' }}>Admin only</div>
+        <div className="glass p-8 text-center" style={{ color: 'var(--text-2)' }}>
+          Developer only — feature toggles and platform tools are restricted to the developer role.
+        </div>
       </AppShell>
     );
   }
 
   return (
-    <AppShell title="Feature toggles" subtitle="Turn modules on or off for this organisation">
+    <AppShell title="Feature toggles" subtitle="Developer · turn modules on or off for this organisation">
       {loading ? (
         <div className="glass p-8 text-center" style={{ color: 'var(--text-2)' }}>Loading…</div>
       ) : (
@@ -170,22 +182,6 @@ export default function Features() {
             </button>
             <button type="button" onClick={exportOrg} className="as-btn-ghost">
               Download org backup (JSON)
-            </button>
-            <button type="button" className="as-btn-ghost" onClick={async () => {
-              try {
-                const r = await api.post('/matches/fixtures/generate', {});
-                const csv = [['Round','Date','TeamA','TeamB']].concat((r.data.fixtures||[]).map((f: any) => [f.round, f.date, f.teamAName, f.teamBName]));
-                const blob = new Blob([csv.map(row => row.join(',')).join('\n')], { type: 'text/csv' });
-                const a = document.createElement('a');
-                a.href = URL.createObjectURL(blob);
-                a.download = 'fixtures-round-robin.csv';
-                a.click();
-                setMsg(`Generated ${r.data.matchCount} fixtures (CSV downloaded)`);
-              } catch (e: any) {
-                setMsg(e.response?.data?.error || 'Fixture generate failed');
-              }
-            }}>
-              Generate fixtures CSV
             </button>
           </div>
         </div>
