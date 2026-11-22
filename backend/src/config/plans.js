@@ -1,6 +1,5 @@
 /**
- * Free vs Pro feature flags & soft limits.
- * Enforce in API so UI cannot bypass.
+ * Free vs Pro plan limits + developer-toggled product features.
  */
 const PLANS = {
   free: {
@@ -48,8 +47,12 @@ function canUse(org, feature) {
   return !!plan.limits[feature];
 }
 
-/** Every product surface is togglable by developer per org */
+/**
+ * Default feature matrix. Developer can flip any key per org via Features page.
+ * Keys match AppShell nav + in-page feat() checks.
+ */
 const DEFAULT_FEATURES = {
+  // —— Core pages / modules ——
   players: true,
   teams: true,
   auction: true,
@@ -58,26 +61,70 @@ const DEFAULT_FEATURES = {
   billing: true,
   points: true,
   scoreboard: true,
-  tournamentHub: true,
-  franchisePortal: true,
-  broadcastPack: true,
+  hub: true,
+  broadcast: true,
+  franchise: true,
   intelligence: true,
-  liveTeams: false,
+
+  // —— Public surfaces ——
   publicLive: true,
   publicResults: true,
   publicMatchCentre: true,
   publicTournament: true,
   publicPoints: true,
+  liveTeams: false,
+  liveBidHistory: true,
+  liveSoldList: true,
+  spectatorLinks: true,
+
+  // —— Auction room (granular) ——
   auctionTimer: true,
+  auctionNoBidGrace: true,
   auctionKeyboard: true,
   auctionExport: true,
   auctionBudgetHints: true,
   auctionRecallUnsold: true,
   auctionShareLive: true,
+  auctionFocusMode: true,
+  auctionPlayerCard: true,
+  auctionUndoBid: true,
+  auctionUndoSell: true,
+  auctionSoftPause: true,
+  auctionMultiSet: true,
+  auctionRandomDraw: true,
+
+  // —— Players / teams ops ——
+  playerTags: true,
+  playerNotes: true,
+  playerBulkPhoto: true,
+  playerMergeHelper: true,
+  teamOwnerPortal: true,
+  purseAuditLog: true,
+
+  // —— Scoring ——
   matchDls: true,
   matchSuperOver: true,
   matchRainDelay: true,
   matchCsvImport: true,
+  scoringBigTap: true,
+  scoringKeyboard: true,
+  commentaryFeed: true,
+
+  // —— Broadcast / integrations ——
+  sponsorRotation: true,
+  soldWebhook: true,
+  sheetSync: true,
+  publicEmbed: true,
+
+  // —— Intelligence / reports ——
+  intelMarketValues: true,
+  intelSpendEfficiency: true,
+  intelProjection: true,
+  intelPerformancePrice: true,
+  ownerPackExport: true,
+  reportPdfCsv: true,
+
+  // —— Dashboard ——
   dashboardAnalytics: true,
   dashboardPublicFeeds: true
 };
