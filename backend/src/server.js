@@ -21,6 +21,7 @@ const seriesRoutes = require('./routes/series');
 const auditRoutes = require('./routes/audit');
 const tournamentRoutes = require('./routes/tournaments');
 const franchiseRoutes = require('./routes/franchise');
+const platformRoutes = require('./routes/platform');
 const { purgeExpiredPhotos } = require('./data/store');
 
 const app = express();
@@ -54,6 +55,7 @@ app.use('/api/series', seriesRoutes);
 app.use('/api/audit', auditRoutes);
 app.use('/api/tournaments', tournamentRoutes);
 app.use('/api/franchise', franchiseRoutes);
+app.use('/api/platform', platformRoutes);
 
 app.get('/api/health', (req, res) => {
   let counts = {};
