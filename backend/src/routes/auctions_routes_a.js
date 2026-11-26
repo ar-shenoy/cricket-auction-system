@@ -6,6 +6,7 @@ const {
   removeBid, getUsers, persist, getOrgById, addAuditLog
 } = require('../data/store');
 const { authMiddleware, requireRole } = require('../middleware/auth');
+const { fireSoldWebhook: _fireSoldWA, fireUnsoldNotify } = require('./auctions_helpers');
 
 const MIN_SLOT = 1000;
 const sellLocks = new Map();
@@ -70,19 +71,7 @@ function appendPurseLog(auction, entry) {
 }
 
 function fireSoldWebhook(orgId, payload) {
-  try {
-    const org = getOrgById ? getOrgById(orgId) : null;
-    const url = org?.soldWebhookUrl || org?.settings?.soldWebhookUrl;
-    if (!url || !String(url).startsWith('http')) return;
-    const body = JSON.stringify({ event: 'player-sold', at: new Date().toISOString(), ...payload });
-    // fire-and-forget
-    fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'User-Agent': 'CricketAuction/1.0' },
-      body,
-      signal: AbortSignal.timeout(8000)
-    }).catch(() => {});
-  } catch (_) {}
+  try { _fireSoldWA(orgId, payload); } catch (_) {}
 }
 
 module.exports = function registerAuctionRoutesA(router) {
@@ -158,17 +147,9 @@ router.post('/:id/pause', authMiddleware, requireRole('admin'), (req, res) => {
   const reason = (req.body && req.body.reason) ? String(req.body.reason).trim().slice(0, 200) : '';
   const pauseLog = Array.isArray(auction.pauseLog) ? [...auction.pauseLog] : [];
   if (newStatus === 'paused') {
-    pauseLog.push({
-      at: new Date().toISOString(),
-      reason: reason || 'unspecified',
-      by: req.user?.email || req.user?.id || null
-    });
+    pauseLog.push({ at: new Date().toISOString(), reason: reason || 'unspecified', by: req.user?.email || req.user?.id || null });
   } else {
-    pauseLog.push({
-      at: new Date().toISOString(),
-      reason: 'resumed',
-      by: req.user?.email || req.user?.id || null
-    });
+    pauseLog.push({ at: new Date().toISOString(), reason: 'resumed', by: req.user?.email || req.user?.id || null });
   }
   const updated = updateAuction(auction.id, {
     status: newStatus,
@@ -361,6 +342,13 @@ router.post('/:id/unsold', authMiddleware, requireRole('admin'), (req, res) => {
     auction: updatedAuction,
     result: { status: 'Unsold', player, price: 0 }
   });
+  try {
+    fireUnsoldNotify(auction.orgId || req.user?.orgId, {
+      auctionId: auction.id,
+      auctionName: auction.name,
+      player: player ? { id: player.id, name: player.name, role: player.role } : null
+    });
+  } catch (_) {}
   res.json({ auction: updatedAuction, result: { status: 'Unsold', player } });
 });
 
