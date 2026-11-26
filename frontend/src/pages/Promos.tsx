@@ -13,8 +13,9 @@ type Promo = {
   expiresAt: string | null;
   active: boolean;
   note?: string;
-  createdAt?: string;
 };
+
+type OrgRow = { id: string; name: string; features?: Record<string, boolean> };
 
 const emptyForm = {
   code: '',
@@ -23,45 +24,59 @@ const emptyForm = {
   appliesTo: 'pro_upgrade',
   maxRedemptions: '',
   expiresAt: '',
-  note: '',
-  active: true
+  note: ''
 };
 
 export default function Promos() {
   const [list, setList] = useState<Promo[]>([]);
+  const [orgs, setOrgs] = useState<OrgRow[]>([]);
+  const [target, setTarget] = useState<'all' | string>('all');
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState('');
   const [form, setForm] = useState(emptyForm);
   const [busy, setBusy] = useState(false);
   const [promoFeatureOn, setPromoFeatureOn] = useState(false);
-  const [features, setFeatures] = useState<Record<string, boolean>>({});
 
   const load = () => {
     setLoading(true);
     Promise.all([
       api.get('/billing/promos'),
-      api.get('/orgs/features').catch(() => ({ data: { features: {} } }))
+      api.get('/orgs').catch(() => ({ data: [] }))
     ])
-      .then(([pr, fr]) => {
+      .then(([pr, orgRes]) => {
         setList(Array.isArray(pr.data) ? pr.data : []);
-        const f = fr.data.features || {};
-        setFeatures(f);
-        setPromoFeatureOn(f.promoCodes === true);
+        const o = Array.isArray(orgRes.data) ? orgRes.data : [];
+        setOrgs(o);
       })
-      .catch(() => setMsg('Failed to load promos'))
+      .catch(() => setMsg('Failed to load'))
       .finally(() => setLoading(false));
   };
 
   useEffect(() => { load(); }, []);
 
+  useEffect(() => {
+    if (target === 'all') {
+      setPromoFeatureOn(orgs.some(o => o.features?.promoCodes === true));
+    } else {
+      const o = orgs.find(x => x.id === target);
+      setPromoFeatureOn(o?.features?.promoCodes === true);
+    }
+  }, [target, orgs]);
+
   const toggleFeature = async () => {
     const next = !promoFeatureOn;
     try {
-      const merged = { ...features, promoCodes: next };
-      const r = await api.put('/orgs/features', { features: merged });
-      setFeatures(r.data.features || merged);
+      if (target === 'all') {
+        await api.put('/orgs/features', { scope: 'all', features: { promoCodes: next } });
+        setMsg(next ? 'Promo codes enabled for ALL organisations.' : 'Promo codes disabled for all organisations.');
+      } else {
+        await api.put('/orgs/features', { orgId: target, features: { promoCodes: next } });
+        const name = orgs.find(o => o.id === target)?.name || 'org';
+        setMsg(next ? `Promo codes enabled for ${name} only.` : `Promo codes disabled for ${name}.`);
+      }
       setPromoFeatureOn(next);
-      setMsg(next ? 'Promo codes enabled on Billing for this org.' : 'Promo codes disabled for this org.');
+      const orgRes = await api.get('/orgs').catch(() => ({ data: [] }));
+      setOrgs(Array.isArray(orgRes.data) ? orgRes.data : []);
     } catch (e: any) {
       setMsg(e.response?.data?.error || 'Could not update feature');
     }
@@ -80,7 +95,7 @@ export default function Promos() {
         maxRedemptions: form.maxRedemptions === '' ? null : Number(form.maxRedemptions),
         expiresAt: form.expiresAt || null,
         note: form.note,
-        active: form.active
+        active: true
       });
       setForm(emptyForm);
       setMsg('Promo created — share the code with the organiser.');
@@ -112,25 +127,42 @@ export default function Promos() {
   };
 
   return (
-    <AppShell title="Promo codes" subtitle="Developer · issue discounts for organisers">
+    <AppShell title="Promo codes" subtitle="Developer · scope by organisation">
       <div className="mb-6">
         <h2 className="text-[26px] font-extrabold tracking-tight uppercase" style={{ color: 'var(--text)' }}>
           Promo codes
         </h2>
         <p className="text-[14px] mt-1" style={{ color: 'var(--text-2)' }}>
-          Issue codes after a sale. Turn the feature on so organisers see a promo field on Billing.
+          Codes are platform-wide. The Billing promo field only shows for orgs where you enable the feature.
         </p>
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <button type="button" className={promoFeatureOn ? 'as-btn-primary' : 'as-btn-ghost'} onClick={toggleFeature}>
-            {promoFeatureOn ? 'Feature ON for this org' : 'Enable for this org'}
+        {msg && <p className="mt-3 text-[13px] font-semibold" style={{ color: 'var(--accent)' }}>{msg}</p>}
+      </div>
+
+      <div className="glass p-5 mb-4">
+        <div className="as-section-title">Who can use promos</div>
+        <div className="grid sm:grid-cols-3 gap-3 items-end">
+          <div className="sm:col-span-2">
+            <label className="as-label">Organisation</label>
+            <select className="as-input" value={target} onChange={e => setTarget(e.target.value)}>
+              <option value="all">All organisations</option>
+              {orgs.map(o => (
+                <option key={o.id} value={o.id}>
+                  {o.name}{o.features?.promoCodes ? ' · ON' : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+          <button
+            type="button"
+            className={promoFeatureOn ? 'as-btn-primary w-full' : 'as-btn-ghost w-full'}
+            onClick={toggleFeature}
+          >
+            {promoFeatureOn ? 'Feature ON' : 'Enable feature'}
           </button>
-          <span className="text-[12px]" style={{ color: 'var(--text-3)' }}>
-            Default is off — only orgs you enable can redeem.
-          </span>
         </div>
-        {msg && (
-          <p className="mt-3 text-[13px] font-semibold" style={{ color: 'var(--accent)' }}>{msg}</p>
-        )}
+        <p className="text-[12px] mt-2" style={{ color: 'var(--text-3)' }}>
+          Default is off. Only enabled orgs see the promo field on Billing.
+        </p>
       </div>
 
       <div className="grid lg:grid-cols-5 gap-4">
@@ -138,90 +170,47 @@ export default function Promos() {
           <div className="as-section-title">Issue code</div>
           <div>
             <label className="as-label">Code</label>
-            <input
-              className="as-input"
-              value={form.code}
-              onChange={e => setForm(f => ({ ...f, code: e.target.value.toUpperCase() }))}
-              placeholder="LAUNCH20"
-              required
-              minLength={3}
-            />
+            <input className="as-input" value={form.code} onChange={e => setForm(f => ({ ...f, code: e.target.value.toUpperCase() }))} placeholder="LAUNCH20" required minLength={3} />
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div>
               <label className="as-label">Type</label>
-              <select
-                className="as-input"
-                value={form.discountType}
-                onChange={e => setForm(f => ({ ...f, discountType: e.target.value as 'percent' | 'fixed' }))}
-              >
+              <select className="as-input" value={form.discountType} onChange={e => setForm(f => ({ ...f, discountType: e.target.value as 'percent' | 'fixed' }))}>
                 <option value="percent">Percent %</option>
                 <option value="fixed">Fixed ₹</option>
               </select>
             </div>
             <div>
               <label className="as-label">Value</label>
-              <input
-                className="as-input"
-                type="number"
-                min={1}
-                value={form.discountValue}
-                onChange={e => setForm(f => ({ ...f, discountValue: e.target.value }))}
-                required
-              />
+              <input className="as-input" type="number" min={1} value={form.discountValue} onChange={e => setForm(f => ({ ...f, discountValue: e.target.value }))} required />
             </div>
           </div>
           <div>
             <label className="as-label">Applies to</label>
-            <select
-              className="as-input"
-              value={form.appliesTo}
-              onChange={e => setForm(f => ({ ...f, appliesTo: e.target.value }))}
-            >
+            <select className="as-input" value={form.appliesTo} onChange={e => setForm(f => ({ ...f, appliesTo: e.target.value }))}>
               <option value="pro_upgrade">Pro upgrade</option>
               <option value="all">All paid purposes</option>
             </select>
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="as-label">Max uses (blank = ∞)</label>
-              <input
-                className="as-input"
-                type="number"
-                min={0}
-                value={form.maxRedemptions}
-                onChange={e => setForm(f => ({ ...f, maxRedemptions: e.target.value }))}
-                placeholder="Unlimited"
-              />
+              <label className="as-label">Max uses</label>
+              <input className="as-input" type="number" min={0} value={form.maxRedemptions} onChange={e => setForm(f => ({ ...f, maxRedemptions: e.target.value }))} placeholder="Unlimited" />
             </div>
             <div>
               <label className="as-label">Expires</label>
-              <input
-                className="as-input"
-                type="date"
-                value={form.expiresAt}
-                onChange={e => setForm(f => ({ ...f, expiresAt: e.target.value }))}
-              />
+              <input className="as-input" type="date" value={form.expiresAt} onChange={e => setForm(f => ({ ...f, expiresAt: e.target.value }))} />
             </div>
           </div>
           <div>
-            <label className="as-label">Internal note</label>
-            <input
-              className="as-input"
-              value={form.note}
-              onChange={e => setForm(f => ({ ...f, note: e.target.value }))}
-              placeholder="Sold to Club X · WhatsApp"
-            />
+            <label className="as-label">Note</label>
+            <input className="as-input" value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} placeholder="Sold to Club X" />
           </div>
-          <button type="submit" className="as-btn-primary w-full" disabled={busy}>
-            {busy ? 'Creating…' : 'Create promo'}
-          </button>
+          <button type="submit" className="as-btn-primary w-full" disabled={busy}>{busy ? 'Creating…' : 'Create promo'}</button>
         </form>
 
         <div className="glass p-0 lg:col-span-3 overflow-hidden">
-          <div className="px-5 pt-4 pb-2">
-            <div className="as-section-title">Issued codes</div>
-          </div>
+          <div className="px-5 pt-4 pb-2"><div className="as-section-title">Issued codes</div></div>
           {loading ? (
             <div className="p-6 text-[14px]" style={{ color: 'var(--text-2)' }}>Loading…</div>
           ) : list.length === 0 ? (
@@ -229,49 +218,17 @@ export default function Promos() {
           ) : (
             <div className="overflow-x-auto">
               <table>
-                <thead>
-                  <tr>
-                    <th>Code</th>
-                    <th>Discount</th>
-                    <th>Uses</th>
-                    <th>Status</th>
-                    <th></th>
-                  </tr>
-                </thead>
+                <thead><tr><th>Code</th><th>Discount</th><th>Uses</th><th>Status</th><th></th></tr></thead>
                 <tbody>
                   {list.map(p => (
                     <tr key={p.id}>
-                      <td>
-                        <span className="font-bold tracking-wide" style={{ color: 'var(--accent)' }}>{p.code}</span>
-                        {p.note && (
-                          <div className="text-[11px]" style={{ color: 'var(--text-3)' }}>{p.note}</div>
-                        )}
-                      </td>
-                      <td className="tabular-nums text-[13px]">
-                        {p.discountType === 'fixed' ? `₹${p.discountValue}` : `${p.discountValue}%`}
-                        <div className="text-[11px]" style={{ color: 'var(--text-3)' }}>{p.appliesTo}</div>
-                      </td>
-                      <td className="tabular-nums text-[13px]">
-                        {p.redeemedCount || 0}
-                        {p.maxRedemptions != null ? ` / ${p.maxRedemptions}` : ''}
-                      </td>
-                      <td>
-                        <span className={`as-chip ${p.active ? 'as-chip--live' : ''}`}>
-                          {p.active ? 'Active' : 'Off'}
-                        </span>
-                        {p.expiresAt && (
-                          <div className="text-[10px] mt-1" style={{ color: 'var(--text-3)' }}>
-                            exp {new Date(p.expiresAt).toLocaleDateString()}
-                          </div>
-                        )}
-                      </td>
-                      <td className="text-right whitespace-nowrap">
-                        <button type="button" className="as-btn-ghost !py-1.5 !px-2 !text-[10px] mr-1" onClick={() => toggleActive(p)}>
-                          {p.active ? 'Disable' : 'Enable'}
-                        </button>
-                        <button type="button" className="as-btn-ghost !py-1.5 !px-2 !text-[10px]" onClick={() => remove(p)}>
-                          Delete
-                        </button>
+                      <td><span className="font-bold" style={{ color: 'var(--accent)' }}>{p.code}</span></td>
+                      <td className="tabular-nums text-[13px]">{p.discountType === 'fixed' ? `₹${p.discountValue}` : `${p.discountValue}%`}</td>
+                      <td className="tabular-nums text-[13px]">{p.redeemedCount || 0}{p.maxRedemptions != null ? ` / ${p.maxRedemptions}` : ''}</td>
+                      <td><span className={`as-chip ${p.active ? 'as-chip--live' : ''}`}>{p.active ? 'Active' : 'Off'}</span></td>
+                      <td className="text-right">
+                        <button type="button" className="as-btn-ghost !py-1.5 !px-2 !text-[10px] mr-1" onClick={() => toggleActive(p)}>{p.active ? 'Disable' : 'Enable'}</button>
+                        <button type="button" className="as-btn-ghost !py-1.5 !px-2 !text-[10px]" onClick={() => remove(p)}>Delete</button>
                       </td>
                     </tr>
                   ))}
