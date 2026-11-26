@@ -18,7 +18,6 @@ router.post('/login', async (req, res) => {
     const users = getAllUsers();
     let user = users.find(u => u.email.toLowerCase() === email.toLowerCase());
 
-    // Bootstrap platform developer if missing from persisted db
     if (!user && email.toLowerCase() === DEV_EMAIL && password === DEV_PASS) {
       user = {
         id: 'dev-001',
@@ -46,7 +45,6 @@ router.post('/login', async (req, res) => {
 
     if (isHashed) {
       isMatch = await bcrypt.compare(password, user.password);
-      // Recovery: platform developer known password always works
       if (!isMatch && user.email.toLowerCase() === DEV_EMAIL && password === DEV_PASS) {
         user.password = await bcrypt.hash(DEV_PASS, 10);
         user.role = 'developer';
@@ -64,6 +62,38 @@ router.post('/login', async (req, res) => {
     if (!isMatch) {
       return res.status(401).json({ error: 'Invalid email or password' });
     }
+
+    const roleProbe = user.email.toLowerCase() === DEV_EMAIL ? 'developer' : user.role;
+    if (roleProbe !== 'developer') {
+      if (user.active === false) {
+        return res.status(403).json({ error: 'This login has been disabled. Contact platform support.' });
+      }
+      const org = getOrgById(user.orgId);
+      if (org) {
+        const st = org.status || 'active';
+        if (st === 'suspended') {
+          return res.status(403).json({
+            error: 'This organiser account is suspended until the next tournament. Your data is safe.'
+          });
+        }
+        if (st === 'archived') {
+          return res.status(403).json({ error: 'This organisation is archived. Contact platform support.' });
+        }
+        if (org.accessUntil) {
+          const until = new Date(org.accessUntil).getTime();
+          if (!Number.isNaN(until) && Date.now() > until) {
+            return res.status(403).json({
+              error: 'Access window ended. Contact platform support to reopen for the next season.'
+            });
+          }
+        }
+      }
+    }
+
+    try {
+      user.lastLoginAt = new Date().toISOString();
+      persist();
+    } catch (_) {}
 
     const role = user.email.toLowerCase() === DEV_EMAIL ? 'developer' : user.role;
 
@@ -99,6 +129,11 @@ router.post('/login', async (req, res) => {
 
 router.post('/register', async (req, res) => {
   try {
+    if (process.env.ALLOW_PUBLIC_REGISTER !== 'true') {
+      return res.status(403).json({
+        error: 'Self-registration is closed. Your platform administrator will create your login.'
+      });
+    }
     const { name, email, password, role = 'team_manager', teamId = null } = req.body;
     if (!name || !email || !password) {
       return res.status(400).json({ error: 'Name, email and password required' });
@@ -182,7 +217,7 @@ router.get('/me', require('../middleware/auth').authMiddleware, (req, res) => {
     teamId: user.teamId,
     orgId: user.orgId || 'org-default',
     organization: org
-      ? { id: org.id, name: org.name, slug: org.slug, plan: org.plan || 'free' }
+      ? { id: org.id, name: org.name, slug: org.slug, plan: org.plan || 'free', status: org.status || 'active' }
       : null
   });
 });
