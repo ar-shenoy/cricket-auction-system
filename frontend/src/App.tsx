@@ -26,6 +26,7 @@ import AuditLog from './pages/AuditLog';
 import Health from './pages/Health';
 import Promos from './pages/Promos';
 import Notifications from './pages/Notifications';
+import Organisers from './pages/Organisers';
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
@@ -87,6 +88,7 @@ export default function App() {
         <Route path="/audit" element={<DeveloperRoute><AuditLog /></DeveloperRoute>} />
         <Route path="/health" element={<DeveloperRoute><Health /></DeveloperRoute>} />
         <Route path="/promos" element={<DeveloperRoute><Promos /></DeveloperRoute>} />
+        <Route path="/organisers" element={<DeveloperRoute><Organisers /></DeveloperRoute>} />
 
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

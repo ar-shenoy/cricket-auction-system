@@ -28,7 +28,8 @@ const ALL_NAV: NavItem[] = [
   { to: '/features', label: 'Features', feature: null, developerOnly: true },
   { to: '/audit', label: 'Audit', feature: null, developerOnly: true },
   { to: '/health', label: 'Health', feature: null, developerOnly: true },
-  { to: '/promos', label: 'Promos', feature: null, developerOnly: true }
+  { to: '/promos', label: 'Promos', feature: null, developerOnly: true },
+  { to: '/organisers', label: 'Organisers', feature: null, developerOnly: true }
 ];
 
 export default function AppShell({
@@ -100,27 +101,15 @@ export default function AppShell({
           <div className="flex items-center gap-0.5 sm:gap-1 flex-wrap justify-end">
             {topLinks.map(item =>
               (item as any).href ? (
-                <a
-                  key={item.label}
-                  href={(item as any).href}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="as-nav-link hidden sm:inline-flex"
-                >
-                  {item.label}
-                </a>
+                <a key={item.label} href={(item as any).href} target="_blank" rel="noreferrer" className="as-nav-link hidden sm:inline-flex">{item.label}</a>
               ) : (
-                <Link key={item.label} to={item.to!} className="as-nav-link hidden sm:inline-flex">
-                  {item.label}
-                </Link>
+                <Link key={item.label} to={item.to!} className="as-nav-link hidden sm:inline-flex">{item.label}</Link>
               )
             )}
             <Link to="/live" className="as-nav-link sm:hidden">Live</Link>
             <ThemeToggle />
             {user && (
-              <button type="button" onClick={logout} className="as-nav-link">
-                Out
-              </button>
+              <button type="button" onClick={logout} className="as-nav-link">Out</button>
             )}
           </div>
         </div>
@@ -128,13 +117,7 @@ export default function AppShell({
           {nav.map(item => {
             const active = loc.pathname === item.to || (item.to !== '/' && loc.pathname.startsWith(item.to));
             return (
-              <Link
-                key={item.to}
-                to={item.to}
-                className={`as-nav-link${active ? ' is-active' : ''}`}
-              >
-                {item.label}
-              </Link>
+              <Link key={item.to} to={item.to} className={`as-nav-link${active ? ' is-active' : ''}`}>{item.label}</Link>
             );
           })}
         </nav>
