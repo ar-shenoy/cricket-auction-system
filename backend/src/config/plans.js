@@ -52,7 +52,6 @@ function canUse(org, feature) {
  * Keys match AppShell nav + in-page feat() checks.
  */
 const DEFAULT_FEATURES = {
-  // —— Core pages / modules ——
   players: true,
   teams: true,
   auction: true,
@@ -66,7 +65,6 @@ const DEFAULT_FEATURES = {
   franchise: true,
   intelligence: true,
 
-  // —— Public surfaces ——
   publicLive: true,
   publicResults: true,
   publicMatchCentre: true,
@@ -77,7 +75,6 @@ const DEFAULT_FEATURES = {
   liveSoldList: true,
   spectatorLinks: true,
 
-  // —— Auction room (granular) ——
   auctionTimer: true,
   auctionNoBidGrace: true,
   auctionKeyboard: true,
@@ -93,7 +90,6 @@ const DEFAULT_FEATURES = {
   auctionMultiSet: true,
   auctionRandomDraw: true,
 
-  // —— Players / teams ops ——
   playerTags: true,
   playerNotes: true,
   playerBulkPhoto: true,
@@ -101,7 +97,6 @@ const DEFAULT_FEATURES = {
   teamOwnerPortal: true,
   purseAuditLog: true,
 
-  // —— Scoring ——
   matchDls: true,
   matchSuperOver: true,
   matchRainDelay: true,
@@ -110,13 +105,11 @@ const DEFAULT_FEATURES = {
   scoringKeyboard: true,
   commentaryFeed: true,
 
-  // —— Broadcast / integrations ——
   sponsorRotation: true,
   soldWebhook: true,
   sheetSync: true,
   publicEmbed: true,
 
-  // —— Intelligence / reports ——
   intelMarketValues: true,
   intelSpendEfficiency: true,
   intelProjection: true,
@@ -124,9 +117,11 @@ const DEFAULT_FEATURES = {
   ownerPackExport: true,
   reportPdfCsv: true,
 
-  // —— Dashboard ——
   dashboardAnalytics: true,
-  dashboardPublicFeeds: true
+  dashboardPublicFeeds: true,
+
+  // Billing promos — off until developer enables for an org
+  promoCodes: false
 };
 
 function getFeatures(org) {

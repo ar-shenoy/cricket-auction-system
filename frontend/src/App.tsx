@@ -24,6 +24,7 @@ import BroadcastStudio from './pages/BroadcastStudio';
 import Intelligence from './pages/Intelligence';
 import AuditLog from './pages/AuditLog';
 import Health from './pages/Health';
+import Promos from './pages/Promos';
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
@@ -37,7 +38,6 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
   return user ? <>{children}</> : <Navigate to="/login" replace />;
 }
 
-/** Developer-only tools (Features, Health, Audit) */
 function DeveloperRoute({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
   if (isLoading) {
@@ -60,7 +60,6 @@ export default function App() {
         <Route path="/register" element={<RegisterOrg />} />
         <Route path="/login" element={<Login />} />
 
-        {/* Public */}
         <Route path="/live" element={<LiveViewer />} />
         <Route path="/results" element={<PublicResults />} />
         <Route path="/scoreboard" element={<Scoreboard />} />
@@ -69,10 +68,8 @@ export default function App() {
         <Route path="/points" element={<PointsTable />} />
         <Route path="/tournament" element={<PublicTournament />} />
 
-        {/* Home */}
         <Route path="/" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
 
-        {/* Staff ops */}
         <Route path="/players" element={<PrivateRoute><Players /></PrivateRoute>} />
         <Route path="/teams" element={<PrivateRoute><Teams /></PrivateRoute>} />
         <Route path="/auction" element={<PrivateRoute><Auction /></PrivateRoute>} />
@@ -84,10 +81,10 @@ export default function App() {
         <Route path="/intelligence" element={<PrivateRoute><Intelligence /></PrivateRoute>} />
         <Route path="/billing" element={<PrivateRoute><Billing /></PrivateRoute>} />
 
-        {/* Developer only */}
         <Route path="/features" element={<DeveloperRoute><Features /></DeveloperRoute>} />
         <Route path="/audit" element={<DeveloperRoute><AuditLog /></DeveloperRoute>} />
         <Route path="/health" element={<DeveloperRoute><Health /></DeveloperRoute>} />
+        <Route path="/promos" element={<DeveloperRoute><Promos /></DeveloperRoute>} />
 
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
