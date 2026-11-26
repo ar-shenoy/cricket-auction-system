@@ -38,6 +38,9 @@ router.get('/plans', (req, res) => {
 
 router.post('/register', async (req, res) => {
   try {
+    if (process.env.ALLOW_PUBLIC_REGISTER !== 'true') {
+      return res.status(403).json({ error: 'Self-registration is closed. Contact platform support for access.' });
+    }
     const { orgName, name, email, password } = req.body;
     if (!orgName || !name || !email || !password) {
       return res.status(400).json({ error: 'orgName, name, email, password required' });
