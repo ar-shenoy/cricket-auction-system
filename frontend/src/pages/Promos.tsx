@@ -33,16 +33,39 @@ export default function Promos() {
   const [msg, setMsg] = useState('');
   const [form, setForm] = useState(emptyForm);
   const [busy, setBusy] = useState(false);
+  const [promoFeatureOn, setPromoFeatureOn] = useState(false);
+  const [features, setFeatures] = useState<Record<string, boolean>>({});
 
   const load = () => {
     setLoading(true);
-    api.get('/billing/promos')
-      .then(r => setList(Array.isArray(r.data) ? r.data : []))
+    Promise.all([
+      api.get('/billing/promos'),
+      api.get('/orgs/features').catch(() => ({ data: { features: {} } }))
+    ])
+      .then(([pr, fr]) => {
+        setList(Array.isArray(pr.data) ? pr.data : []);
+        const f = fr.data.features || {};
+        setFeatures(f);
+        setPromoFeatureOn(f.promoCodes === true);
+      })
       .catch(() => setMsg('Failed to load promos'))
       .finally(() => setLoading(false));
   };
 
   useEffect(() => { load(); }, []);
+
+  const toggleFeature = async () => {
+    const next = !promoFeatureOn;
+    try {
+      const merged = { ...features, promoCodes: next };
+      const r = await api.put('/orgs/features', { features: merged });
+      setFeatures(r.data.features || merged);
+      setPromoFeatureOn(next);
+      setMsg(next ? 'Promo codes enabled on Billing for this org.' : 'Promo codes disabled for this org.');
+    } catch (e: any) {
+      setMsg(e.response?.data?.error || 'Could not update feature');
+    }
+  };
 
   const create = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -95,9 +118,16 @@ export default function Promos() {
           Promo codes
         </h2>
         <p className="text-[14px] mt-1" style={{ color: 'var(--text-2)' }}>
-          Create codes after a sale or campaign. Enable{' '}
-          <strong style={{ color: 'var(--accent)' }}>Promo codes</strong> on Features so organisers can enter them on Billing.
+          Issue codes after a sale. Turn the feature on so organisers see a promo field on Billing.
         </p>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <button type="button" className={promoFeatureOn ? 'as-btn-primary' : 'as-btn-ghost'} onClick={toggleFeature}>
+            {promoFeatureOn ? 'Feature ON for this org' : 'Enable for this org'}
+          </button>
+          <span className="text-[12px]" style={{ color: 'var(--text-3)' }}>
+            Default is off — only orgs you enable can redeem.
+          </span>
+        </div>
         {msg && (
           <p className="mt-3 text-[13px] font-semibold" style={{ color: 'var(--accent)' }}>{msg}</p>
         )}
