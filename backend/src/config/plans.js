@@ -47,10 +47,6 @@ function canUse(org, feature) {
   return !!plan.limits[feature];
 }
 
-/**
- * Default feature matrix. Developer can flip any key per org via Features page.
- * Keys match AppShell nav + in-page feat() checks.
- */
 const DEFAULT_FEATURES = {
   players: true,
   teams: true,
@@ -120,8 +116,8 @@ const DEFAULT_FEATURES = {
   dashboardAnalytics: true,
   dashboardPublicFeeds: true,
 
-  // Billing promos — off until developer enables for an org
-  promoCodes: false
+  promoCodes: false,
+  whatsappNotify: false
 };
 
 function getFeatures(org) {
