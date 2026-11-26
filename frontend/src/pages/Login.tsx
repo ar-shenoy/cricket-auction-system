@@ -33,19 +33,13 @@ export default function Login() {
             <span className="as-brand-mark" aria-hidden>🏏</span>
             <span>AuctionScore</span>
           </Link>
-          <div className="flex items-center gap-2">
-            <ThemeToggle />
-            <Link to="/register" className="as-nav-link is-active">Sign up</Link>
-          </div>
+          <ThemeToggle />
         </div>
       </header>
 
       <div className="flex-1 flex items-center justify-center px-4 py-10">
         <div className="w-full max-w-[420px]">
-          <div
-            className="mb-8"
-            style={{ animation: 'as-rise 0.6s cubic-bezier(0.22,1,0.36,1) both' }}
-          >
+          <div className="mb-8" style={{ animation: 'as-rise 0.6s cubic-bezier(0.22,1,0.36,1) both' }}>
             <div
               className="inline-block px-2.5 py-1 text-[11px] font-extrabold tracking-[0.14em] uppercase mb-3"
               style={{
@@ -61,30 +55,24 @@ export default function Login() {
               className="text-[42px] sm:text-[54px] font-black leading-[0.9] tracking-tight uppercase"
               style={{
                 color: 'var(--accent)',
-                textShadow: '0 0 40px rgba(255,230,0,0.25)',
-                animation: 'as-rise 0.7s cubic-bezier(0.22,1,0.36,1) 0.05s both'
+                textShadow: '0 0 40px rgba(255,230,0,0.25)'
               }}
             >
-              Player<br />Auction
+              Player
+              <br />
+              Auction
             </h1>
           </div>
 
           <div
-            className="p-6 sm:p-8"
+            className="glass p-6 sm:p-8"
             style={{
-              background: 'linear-gradient(165deg, #161616 0%, #0e0e0e 100%)',
-              border: '1px solid rgba(255,255,255,0.09)',
-              borderTop: '3px solid var(--accent)',
-              borderRadius: 14,
-              boxShadow:
-                '0 1px 0 rgba(255,255,255,0.05) inset, 0 28px 70px rgba(0,0,0,0.6)',
-              animation: 'as-panel-in 0.55s cubic-bezier(0.22,1,0.36,1) 0.12s both'
+              borderColor: 'rgba(255,230,0,0.28)',
+              boxShadow: '0 0 0 1px rgba(255,230,0,0.12), 0 24px 60px rgba(0,0,0,0.55)',
+              animation: 'as-rise 0.55s cubic-bezier(0.22,1,0.36,1) 0.08s both'
             }}
           >
-            <h2
-              className="text-[28px] font-black tracking-tight uppercase m-0"
-              style={{ color: 'var(--text)' }}
-            >
+            <h2 className="text-[28px] font-black tracking-tight uppercase m-0" style={{ color: 'var(--text)' }}>
               Sign in
             </h2>
             <div
@@ -97,7 +85,7 @@ export default function Login() {
               }}
             />
             <p className="text-[14px] m-0 mb-6" style={{ color: 'var(--text-2)' }}>
-              Follow the auction live. Captains bid from here.
+              Access is by invitation. Your platform admin issues login credentials.
             </p>
 
             <form onSubmit={handleSubmit} className="space-y-4" autoComplete="off">
@@ -107,8 +95,7 @@ export default function Login() {
                   style={{
                     background: 'rgba(255,59,59,0.12)',
                     color: 'var(--danger)',
-                    border: '1px solid rgba(255,59,59,0.35)',
-                    animation: 'as-rise 0.3s ease both'
+                    border: '1px solid rgba(255,59,59,0.35)'
                   }}
                 >
                   {error}
@@ -143,14 +130,8 @@ export default function Login() {
               </button>
             </form>
 
-            <p
-              className="text-center text-[12px] font-bold tracking-[0.08em] uppercase mt-6 mb-0"
-              style={{ color: 'var(--text-3)' }}
-            >
-              New here?{' '}
-              <Link to="/register" style={{ color: 'var(--accent)' }}>
-                Create an account
-              </Link>
+            <p className="text-center text-[12px] font-semibold mt-6 mb-0" style={{ color: 'var(--text-3)' }}>
+              Need an account? Contact your tournament organiser or platform support.
             </p>
           </div>
         </div>

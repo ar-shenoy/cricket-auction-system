@@ -1,5 +1,6 @@
 /**
  * Free vs Pro plan limits + developer-toggled product features.
+ * Free plan forces certain product features off (Pro unlocks).
  */
 const PLANS = {
   free: {
@@ -37,6 +38,29 @@ const PLANS = {
     }
   }
 };
+
+/** Feature keys that stay OFF on Free plan (Pro required). */
+const PRO_ONLY_FEATURES = [
+  'intelligence',
+  'intelMarketValues',
+  'intelSpendEfficiency',
+  'intelProjection',
+  'intelPerformancePrice',
+  'broadcast',
+  'sponsorRotation',
+  'soldWebhook',
+  'sheetSync',
+  'publicEmbed',
+  'commentaryFeed',
+  'matchDls',
+  'matchSuperOver',
+  'ownerPackExport',
+  'spectatorLinks',
+  'playerBulkPhoto',
+  'auctionMultiSet',
+  'promoCodes',
+  'whatsappNotify'
+];
 
 function getPlan(planId) {
   return PLANS[planId] || PLANS.free;
@@ -121,7 +145,13 @@ const DEFAULT_FEATURES = {
 };
 
 function getFeatures(org) {
-  return { ...DEFAULT_FEATURES, ...(org && org.features ? org.features : {}) };
+  const merged = { ...DEFAULT_FEATURES, ...(org && org.features ? org.features : {}) };
+  if ((org?.plan || 'free') === 'free') {
+    for (const key of PRO_ONLY_FEATURES) {
+      merged[key] = false;
+    }
+  }
+  return merged;
 }
 
-module.exports = { PLANS, getPlan, canUse, DEFAULT_FEATURES, getFeatures };
+module.exports = { PLANS, getPlan, canUse, DEFAULT_FEATURES, getFeatures, PRO_ONLY_FEATURES };
