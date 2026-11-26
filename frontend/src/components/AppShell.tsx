@@ -24,6 +24,7 @@ const ALL_NAV: NavItem[] = [
   { to: '/reports', label: 'Reports', feature: 'reports', adminOnly: true },
   { to: '/intelligence', label: 'Intel', feature: 'intelligence', adminOnly: true },
   { to: '/billing', label: 'Billing', feature: 'billing', adminOnly: true },
+  { to: '/notifications', label: 'Alerts', feature: null, adminOnly: true },
   { to: '/features', label: 'Features', feature: null, developerOnly: true },
   { to: '/audit', label: 'Audit', feature: null, developerOnly: true },
   { to: '/health', label: 'Health', feature: null, developerOnly: true },
