@@ -26,7 +26,8 @@ const ALL_NAV: NavItem[] = [
   { to: '/billing', label: 'Billing', feature: 'billing', adminOnly: true },
   { to: '/features', label: 'Features', feature: null, developerOnly: true },
   { to: '/audit', label: 'Audit', feature: null, developerOnly: true },
-  { to: '/health', label: 'Health', feature: null, developerOnly: true }
+  { to: '/health', label: 'Health', feature: null, developerOnly: true },
+  { to: '/promos', label: 'Promos', feature: null, developerOnly: true }
 ];
 
 export default function AppShell({
@@ -113,7 +114,6 @@ export default function AppShell({
                 </Link>
               )
             )}
-            {/* Mobile quick live link */}
             <Link to="/live" className="as-nav-link sm:hidden">Live</Link>
             <ThemeToggle />
             {user && (
@@ -139,7 +139,6 @@ export default function AppShell({
         </nav>
       </header>
 
-      {/* Mobile page title */}
       {title && (
         <div className="lg:hidden max-w-6xl mx-auto px-3 sm:px-5 pt-3">
           <div className="as-page-title">{title}</div>
