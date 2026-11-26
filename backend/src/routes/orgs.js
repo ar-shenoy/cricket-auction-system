@@ -101,6 +101,10 @@ router.get('/me', authMiddleware, tenantMiddleware, (req, res) => {
     plan: org?.plan || 'free',
     planExpiresAt: org?.planExpiresAt || null,
     soldWebhookUrl: org?.soldWebhookUrl || '',
+    whatsappEnabled: org?.whatsappEnabled !== false,
+    whatsappWebhookUrl: org?.whatsappWebhookUrl || '',
+    whatsappCallMeBotKey: org?.whatsappCallMeBotKey ? '••••' : '',
+    whatsappPhones: org?.whatsappPhones || [],
     features: getFeatures(org),
     limits: getPlan(org?.plan || 'free').limits
   });
@@ -111,6 +115,19 @@ router.patch('/me', authMiddleware, requireRole('admin', 'developer'), tenantMid
   const updates = {};
   if (typeof req.body?.soldWebhookUrl === 'string') updates.soldWebhookUrl = req.body.soldWebhookUrl.trim();
   if (typeof req.body?.name === 'string' && req.body.name.trim()) updates.name = req.body.name.trim();
+  if (typeof req.body?.whatsappEnabled === 'boolean') updates.whatsappEnabled = req.body.whatsappEnabled;
+  if (typeof req.body?.whatsappWebhookUrl === 'string') updates.whatsappWebhookUrl = req.body.whatsappWebhookUrl.trim();
+  if (typeof req.body?.whatsappCallMeBotKey === 'string') updates.whatsappCallMeBotKey = req.body.whatsappCallMeBotKey.trim();
+  if (req.body?.whatsappPhones != null) {
+    if (Array.isArray(req.body.whatsappPhones)) {
+      updates.whatsappPhones = req.body.whatsappPhones.map(p => String(p).trim()).filter(Boolean);
+    } else {
+      updates.whatsappPhones = String(req.body.whatsappPhones)
+        .split(/[,;\n]+/)
+        .map(s => s.trim())
+        .filter(Boolean);
+    }
+  }
   const updated = updateOrganization(orgId, updates);
   res.json({ organization: updated, message: 'Organization updated' });
 });
@@ -122,19 +139,44 @@ router.get('/features', authMiddleware, tenantMiddleware, (req, res) => {
 
 router.put('/features', authMiddleware, requireRole('admin', 'developer'), tenantMiddleware, (req, res) => {
   const incoming = req.body?.features && typeof req.body.features === 'object' ? req.body.features : {};
-  // Developer with global scope writes to default org (or x-org-id target)
-  const orgId = req.orgId || req.headers['x-org-id'] || DEFAULT_ORG_ID;
-  const org = req.org || getOrgById(orgId) || getOrgById(DEFAULT_ORG_ID);
-  const merged = { ...getFeatures(org) };
-  Object.keys(DEFAULT_FEATURES).forEach(k => {
-    if (typeof incoming[k] === 'boolean') merged[k] = incoming[k];
-  });
-  // Forward-compat: accept any extra boolean keys developer sends
-  Object.keys(incoming).forEach(k => {
-    if (typeof incoming[k] === 'boolean') merged[k] = incoming[k];
-  });
+  const scope = req.body?.scope;
+  const targetOrgId = req.body?.orgId || req.headers['x-org-id'] || req.orgId || DEFAULT_ORG_ID;
+
+  function mergeFeatures(org) {
+    const merged = { ...getFeatures(org) };
+    Object.keys(DEFAULT_FEATURES).forEach(k => {
+      if (typeof incoming[k] === 'boolean') merged[k] = incoming[k];
+    });
+    Object.keys(incoming).forEach(k => {
+      if (typeof incoming[k] === 'boolean') merged[k] = incoming[k];
+    });
+    return merged;
+  }
+
+  if (req.user?.role === 'developer' && scope === 'all') {
+    const results = [];
+    for (const org of getOrganizations()) {
+      const merged = mergeFeatures(org);
+      const updated = updateOrganization(org.id, { features: merged });
+      results.push({ orgId: org.id, name: org.name, features: getFeatures(updated) });
+    }
+    return res.json({ scope: 'all', results, message: `Features updated for ${results.length} organisations` });
+  }
+
+  const orgId = req.user?.role === 'developer' ? targetOrgId : (req.orgId || DEFAULT_ORG_ID);
+  const org = getOrgById(orgId) || getOrgById(DEFAULT_ORG_ID);
+  if (!org) return res.status(404).json({ error: 'Organisation not found' });
+  if (req.user?.role !== 'developer' && orgId !== req.orgId && orgId !== req.user?.orgId) {
+    return res.status(403).json({ error: 'Cannot edit another organisation' });
+  }
+  const merged = mergeFeatures(org);
   const updated = updateOrganization(orgId, { features: merged });
-  res.json({ features: getFeatures(updated), message: 'Features updated' });
+  res.json({
+    features: getFeatures(updated),
+    orgId: org.id,
+    orgName: org.name,
+    message: 'Features updated'
+  });
 });
 
 router.get('/public-features', (req, res) => {
@@ -148,7 +190,6 @@ router.get('/public-features', (req, res) => {
   res.json({ features: getFeatures(org) });
 });
 
-/** Full org data dump for backup (admin or developer) */
 router.get('/export', authMiddleware, requireRole('admin', 'developer'), tenantMiddleware, (req, res) => {
   const orgId = req.orgId || req.headers['x-org-id'] || DEFAULT_ORG_ID;
   const org = getOrgById(orgId);
