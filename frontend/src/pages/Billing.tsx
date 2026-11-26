@@ -10,33 +10,92 @@ interface OrgInfo {
   planExpiresAt?: string | null;
   limits?: Record<string, number | boolean>;
   usage?: { teams: number; players: number; matches: number; auctions: number };
+  features?: Record<string, boolean>;
 }
 
 export default function Billing() {
   const [org, setOrg] = useState<OrgInfo | null>(null);
+  const [features, setFeatures] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
+  const [promo, setPromo] = useState('');
+  const [promoPreview, setPromoPreview] = useState<{
+    amountInr: number;
+    discountInr: number;
+    listPriceInr: number;
+    promo?: { code: string };
+  } | null>(null);
+  const [promoErr, setPromoErr] = useState('');
 
   const load = () => {
     setLoading(true);
-    api.get('/orgs/me')
-      .then(r => setOrg(r.data))
+    Promise.all([
+      api.get('/orgs/me'),
+      api.get('/orgs/features').catch(() => ({ data: { features: {} } }))
+    ])
+      .then(([me, fr]) => {
+        setOrg(me.data);
+        setFeatures(fr.data.features || {});
+      })
       .catch(() => setOrg(null))
       .finally(() => setLoading(false));
   };
 
   useEffect(() => { load(); }, []);
 
+  const promoEnabled = features.promoCodes === true;
+
+  const applyPromo = async () => {
+    setPromoErr('');
+    setPromoPreview(null);
+    if (!promo.trim()) return;
+    try {
+      const r = await api.post('/billing/validate-promo', { code: promo.trim() });
+      setPromoPreview(r.data);
+      setMsg(`Promo ${r.data.promo?.code} applied — save ₹${r.data.discountInr}`);
+    } catch (e: any) {
+      setPromoErr(e.response?.data?.error || 'Invalid promo');
+    }
+  };
+
   const activateDemo = async () => {
     setBusy(true);
     setMsg('');
     try {
-      await api.post('/billing/demo-activate');
+      const body = promoEnabled && promo.trim() ? { promoCode: promo.trim() } : {};
+      await api.post('/billing/demo-activate', body);
       setMsg('Pro activated (demo).');
       load();
     } catch (e: any) {
       setMsg(e.response?.data?.error || 'Could not activate');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const startCheckout = async () => {
+    setBusy(true);
+    setMsg('');
+    try {
+      const body = promoEnabled && promo.trim() ? { promoCode: promo.trim() } : {};
+      const r = await api.post('/billing/create-order', body);
+      if (r.data.free) {
+        setMsg('Promo covered 100% — Pro activated.');
+        load();
+        return;
+      }
+      if (r.data.demo) {
+        setMsg(
+          `Order ready (demo). Pay ₹${r.data.amountInr}` +
+            (r.data.discountInr ? ` (saved ₹${r.data.discountInr})` : '') +
+            '. Use Activate Pro (demo) without Razorpay.'
+        );
+        return;
+      }
+      setMsg(`Order ${r.data.orderId} · ₹${r.data.amountInr}. Complete payment with Razorpay checkout.`);
+    } catch (e: any) {
+      setMsg(e.response?.data?.error || 'Checkout failed');
     } finally {
       setBusy(false);
     }
@@ -56,7 +115,7 @@ export default function Billing() {
       {loading ? (
         <div className="glass p-8 text-center" style={{ color: 'var(--text-2)' }}>Loading…</div>
       ) : (
-        <div className="grid sm:grid-cols-2 gap-3.5">
+        <div className="grid sm:grid-cols-2 gap-3.5 as-stagger">
           <div className="glass p-6">
             <div className="text-[13px]" style={{ color: 'var(--text-2)' }}>Organization</div>
             <div className="text-[22px] font-semibold mt-1" style={{ color: 'var(--text)' }}>{org?.name || '—'}</div>
@@ -70,11 +129,45 @@ export default function Billing() {
                 </span>
               )}
             </div>
+
+            {!isPro && promoEnabled && (
+              <div className="mt-5 space-y-2 as-pop">
+                <label className="as-label">Promo code</label>
+                <div className="flex gap-2">
+                  <input
+                    className="as-input"
+                    value={promo}
+                    onChange={e => {
+                      setPromo(e.target.value.toUpperCase());
+                      setPromoPreview(null);
+                      setPromoErr('');
+                    }}
+                    placeholder="ENTER CODE"
+                  />
+                  <button type="button" className="as-btn-ghost shrink-0" onClick={applyPromo}>
+                    Apply
+                  </button>
+                </div>
+                {promoErr && <p className="text-[12px]" style={{ color: 'var(--danger)' }}>{promoErr}</p>}
+                {promoPreview && (
+                  <p className="text-[13px]" style={{ color: 'var(--accent)' }}>
+                    ₹{promoPreview.listPriceInr} → <strong>₹{promoPreview.amountInr}</strong>
+                    {' '}(−₹{promoPreview.discountInr})
+                  </p>
+                )}
+              </div>
+            )}
+
             {msg && <p className="mt-3 text-[14px]" style={{ color: 'var(--accent)' }}>{msg}</p>}
             {!isPro && (
-              <button type="button" onClick={activateDemo} disabled={busy} className="as-btn-primary mt-5 text-sm">
-                {busy ? '…' : 'Activate Pro (demo)'}
-              </button>
+              <div className="mt-5 flex flex-wrap gap-2">
+                <button type="button" onClick={activateDemo} disabled={busy} className="as-btn-primary text-sm">
+                  {busy ? '…' : 'Activate Pro (demo)'}
+                </button>
+                <button type="button" onClick={startCheckout} disabled={busy} className="as-btn-ghost text-sm">
+                  Create order
+                </button>
+              </div>
             )}
           </div>
 
